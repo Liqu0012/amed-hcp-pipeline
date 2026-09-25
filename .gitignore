@@ -1,0 +1,15 @@
+# No data, credentials, or build artifacts belong in this repo.
+*.sif
+*.mgz
+*.nii
+*.nii.gz
+*.dcm
+*license*.txt
+*.log
+raw_nifti/
+output/
+manifests/
+logs/
+__pycache__/
+*.pyc
+.DS_Store
