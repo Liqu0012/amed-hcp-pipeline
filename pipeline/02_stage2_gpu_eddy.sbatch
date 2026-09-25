@@ -1,15 +1,36 @@
 #!/usr/bin/env bash
 # Stage 2 (GPU node): DiffPreprocPipeline_Eddy.sh only -- the one sub-step
-# of DiffusionPreprocessing that actually benefits from GPU
-# (eddy_cuda11.0). Depends on Stage 1 having produced each subject's
-# T1w/Diffusion/ pre-eddy working files.
+# of DiffusionPreprocessing that actually benefits from GPU (eddy_cuda11.0).
+# Depends on Stage 1 having produced each subject's T1w/Diffusion/ pre-eddy
+# working files.
 #
-# Subjects are spread over the allocated GPUs, PER_GPU of them sharing
-# each card via CUDA_VISIBLE_DEVICES. Resumable via a
-# "<output>/<subject>/.stage2_complete" sentinel.
+# Subjects are spread over the NUM_GPUS allocated GPUs, PER_GPU of them
+# sharing each card via CUDA_VISIBLE_DEVICES. This is not oversubscription
+# for its own sake: measured on H100s, one eddy_cuda11.0 run holds ~1GB of
+# the card's 80GB+ VRAM and keeps a single card only 30-50% utilised (its
+# per-iteration host<->device synchronization leaves real idle gaps), so
+# concurrency is the way to actually use the hardware. Push PER_GPU up
+# gradually and watch `nvidia-smi --query-gpu=utilization.gpu`, not load
+# average (which conflates runnable and uninterruptible-sleep processes) --
+# see tools/gpu_sem_add.sh to raise it on an already-running job without
+# restarting.
+#
+# To scale NUM_GPUS: change it below AND --cpus-per-task/--mem/--gres
+# together, in the same ratio (this cluster's job-submit policy caps CPUs at
+# 10 per requested GPU: 3 GPUs -> 30 CPUs -> ~500G was generous headroom at
+# ~1GB/subject, adjust to taste). #SBATCH directives are plain text parsed by
+# sbatch itself, so NUM_GPUS can be overridden by environment but --gres
+# cannot -- if you need more total GPUs than one job's per-user GPU quota
+# allows in a single request, submit this script again with a smaller
+# --gres=gpu:h100:N; Slurm places both on the same physical GPU node (GRES is
+# tracked per-device, not per-job) as long as enough cards are free, so two
+# submissions (e.g. 3 + 1) reach 4 total GPUs while a single quota still caps
+# how many *nodes* you occupy at once.
+#
+# Resumable via a "<output>/<subject>/.stage2_complete" sentinel.
 #
 # SUBJECT_LIST format: one SUBJECT per line.
-# Usage: sbatch --job-name=stage2_batch run_stage2_gpu_eddy.sbatch SUBJECT_LIST
+# Usage: sbatch --job-name=stage2_batch 02_stage2_gpu_eddy.sbatch SUBJECT_LIST
 #SBATCH --partition=gcalc2
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -30,7 +51,7 @@ SIF=${HCP_SIF:-/data/juntendodb/containers/hcp_pipelines_v6_complete_20260831.si
 LICENSE=${FS_LICENSE:-$HOME/.licenses/freesurfer/license.txt}  # your own FreeSurfer license -- see https://surfer.nmr.mgh.harvard.edu/registration.html
 test -s "$LICENSE"
 
-NUM_GPUS=3
+NUM_GPUS=${NUM_GPUS:-3}          # must match #SBATCH --gres above (see header)
 PER_GPU=${PER_GPU:-16}
 
 GPU_SEM_FIFO=$(mktemp -u /tmp/gpu_sem.XXXXXX)

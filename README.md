@@ -11,6 +11,33 @@ code only. Site/scanner/protocol codes that appear in a few comments (e.g.
 `JTD_Prisma_HARP`, `UTK_Prisma_CRHD`) are pseudonymous cohort identifiers
 used as running examples during development, not personal identifiers.
 
+## Layout
+
+```
+pipeline/
+  01_stage1_structural_preeddy.sbatch   entrypoint: CPU node, one whole node per job
+  02_stage2_gpu_eddy.sbatch             entrypoint: GPU node (H100, eddy_cuda11.0)
+  03_stage3_posteddy_fmri.sbatch        entrypoint: CPU node
+  repair_preeddy.sbatch                 entrypoint: CPU node, re-run PreEddy only
+  lib/                                  helpers the entrypoints call by path at
+    hcp_env.sh                          runtime ($AMED_ROOT/scripts/<name> inside
+    convert_one_subject.sh              the container) -- not meant to be run
+    build_subject_manifest.py           directly. See "Deploying" below for why
+    run_structural_generic.sh           this subfolder gets flattened back out.
+    run_fmri_generic.sh
+    run_advanced_fmri_generic.sh
+container/
+  hcp_v6_complete.def                   Apptainer build recipe
+  build_hcp_v6_complete.sbatch          the build job
+  hcp_container_entrypoint.sh           baked into the image's %environment
+  validate_hcp_complete.sh              post-build smoke test
+tools/
+  sem_tool.sh, sem_drain.sh             live-retune stage 1's concurrency caps
+  gpu_sem_add.sh                        same idea, per-GPU, for stage 2
+  qc_stage2.py                          verify eddy output before stage 3 sees it
+  scope_report.py                       cohort x protocol completion counts
+```
+
 ## Pipeline stages
 
 | Stage | Script | Runs on | What it does |
@@ -18,13 +45,25 @@ used as running examples during development, not personal identifiers.
 | 1 | `pipeline/01_stage1_structural_preeddy.sbatch` | CPU node | DICOM→NIfTI, manifest build, PreFreeSurfer, FreeSurfer, PostFreeSurfer, and `DiffPreprocPipeline_PreEddy.sh` (gradient-distortion prep + topup) if the subject has diffusion data |
 | 2 | `pipeline/02_stage2_gpu_eddy.sbatch` | GPU node (H100, `eddy_cuda11.0`) | `DiffPreprocPipeline_Eddy.sh --gpu=TRUE` only -- the single HCP sub-step that is GPU-accelerated |
 | 3 | `pipeline/03_stage3_posteddy_fmri.sbatch` | CPU node | PostEddy, fMRIVolume, fMRISurface, ICAFIX, PostFix, MSMAll (MATLAB Runtime / `--matlab-run-mode=0`, no MATLAB license needed) |
-| 3b | `pipeline/03b_stage3_with_connectome_optional.sbatch` | CPU node | Same as stage 3, plus a call out to an MRtrix3 connectome pipeline at `/opt/amed-connectome/scripts/run_pipeline.sh` inside the container. **That script is not part of this repo** -- it's a separate, site-specific addition; this file just documents the integration point (`--hcpstyle --steps=1-5`, reading `T1w/Diffusion/{data,bvals,bvecs,nodif_brain_mask}` and `T1w/<subject>` straight out of stage 1/2's output). |
 | repair | `pipeline/repair_preeddy.sbatch` | CPU node | Re-runs only PreEddy for subjects whose manifest had to be regenerated (see the DWI-gate note below) |
 
 Each stage is one `sbatch` submission per **whole node**, with its own
 internal scheduler (a Bash counting semaphore over an unlinked FIFO) rather
 than one Slurm job per subject -- see "Concurrency" below for why, and
 `tools/` for how to retune it on a job that's already running.
+
+**Adding a connectome step (optional, not included):** stage 3 stops at
+MSMAll on purpose -- tractography/connectome generation is site-specific and
+not part of this repo. If you have your own MRtrix3-based pipeline, the
+integration point is a single extra call after stage 3's fMRI block, once
+`DiffPreprocPipeline.sh`/stage 2 has written `T1w/Diffusion/{data,bvals,bvecs,
+nodif_brain_mask}` and FreeSurfer has written `T1w/<subject>`:
+
+```bash
+apptainer exec --cleanenv --bind "${ROOT}:/work" "$SIF" \
+  /path/to/your/connectome/pipeline "$subject" \
+  --input-root=/work/output --output-root=/work/output --fs-root=/work/output
+```
 
 ## Requirements
 
@@ -61,10 +100,27 @@ export FS_LICENSE=/path/to/license.txt
 raw_nifti/<subject>/       dcm2niix output + subject_manifest.json + subject.env
 output/<subject>/          HCP Pipelines output tree
 logs/                      per-subject and per-batch-job logs
-scripts/                   this repo's pipeline/ and tools/ scripts
+scripts/                   this repo's scripts (see Deploying)
 ```
 
-## Manifest generation (`pipeline/build_subject_manifest.py`)
+### Deploying
+
+The entrypoints call their helpers by a flat runtime path,
+`${AMED_ROOT}/scripts/<name>` (see e.g. stage 1 calling
+`"${ROOT}/scripts/convert_one_subject.sh"`), independent of how this repo
+itself is laid out. So when installing onto a cluster, flatten `pipeline/`
+(entrypoints and `pipeline/lib/*` together, no subfolder) into
+`$AMED_ROOT/scripts/`:
+
+```bash
+cp pipeline/*.sbatch pipeline/lib/* "$AMED_ROOT/scripts/"
+cp tools/* "$AMED_ROOT/scripts/"   # optional, only needed for live retuning
+```
+
+Then submit from `$AMED_ROOT/scripts/`, e.g.
+`sbatch 01_stage1_structural_preeddy.sbatch my_subject_list.tsv`.
+
+## Manifest generation (`pipeline/lib/build_subject_manifest.py`)
 
 Reads dcm2niix's per-series JSON sidecars and classifies each series into
 T1w / T2w / fMRI / diffusion / spin-echo fieldmap, then writes
