@@ -191,31 +191,56 @@ request assumed -- check CPU `user+sys` time and GPU `nvidia-smi`
 utilization (not just load average, which conflates runnable and
 uninterruptible-sleep processes) before pushing concurrency higher.
 
-**Stage 3 uses two separate semaphores, not one.** MSMAll's compiled
-MCR binary (`MSMregression`, `--matlab-run-mode=0`) ignores
-`OMP_NUM_THREADS`/`ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS` the same way FIX's
-classifier does, and measured at ~437 threads / ~12.8 real CPU-cores per
-subject -- by far the heaviest of stage 3's steps (PostEddy/fMRIVolume/
-fMRISurface/ICAFIX/PostFix measured at ~5.9 cores/subject in their own
-worst case). A single flat concurrency cap sized to survive every
-concurrent subject being in MSMAll at once (safe, but only ~12 total)
-left the lighter steps badly underusing the node whenever subjects
-*weren't* all in MSMAll -- which is most of the time, since per-subject
-logs show MSMAll only takes ~1 hour of the ~5.9-hour total pipeline (the
-steps before it take ~4.9 hours). So `ENTRY_MAX_CONCURRENT` (admission
-into the whole pipeline) and `MSMALL_MAX_CONCURRENT` (a second, separate
-gate around only the MSMAll call) are sized independently against the
-worst *combined* case -- `MSMALL_MAX_CONCURRENT` subjects all in MSMAll
-plus every other admitted subject simultaneously in the next-heaviest
-phase:
+**Stage 3 uses three separate semaphores, not one.** This went through two
+iterations, both driven by the same mistake worth naming so it isn't
+repeated: measuring a *blend* of phases and treating it as one phase's
+true cost.
+
+A first flat concurrency cap (all of PostEddy/fMRIVolume/fMRISurface/
+FIX/PostFix/MSMAll sharing one admission limit) was sized to survive
+every concurrent subject being in MSMAll at once, whose compiled MCR
+binary (`MSMregression`, `--matlab-run-mode=0`) ignores `OMP_NUM_THREADS`/
+`ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS` and measured at ~437 threads /
+~12.8 real CPU-cores per subject. That cap (~12 total) left every *other*
+step badly underusing the node whenever subjects weren't all in MSMAll --
+which is most of the time, since per-subject logs show MSMAll takes only
+~1 hour of the ~5.9-hour total pipeline. So a second version split off a
+dedicated `MSMALL_MAX_CONCURRENT` gate and raised the general
+`ENTRY_MAX_CONCURRENT`, sized against a "~5.9 cores/subject" figure for
+everything else -- which turned out to be a blend from a mixed-phase
+measurement, not FIX's own cost. Raising `ENTRY_MAX_CONCURRENT` let
+subjects pile up in FIX *specifically* (19 concurrent on one node), and
+load hit 474/192 again. Direct measurement of FIX's own MCR classifier
+processes showed ~10.1 real cores/subject -- essentially as heavy as
+MSMAll, not 5.9, because FIX is *also* a compiled MCR binary that ignores
+the same thread-limiting env vars.
+
+The actual light phases are only PostEddy/fMRIVolume/fMRISurface/PostFix.
+So there are three semaphores: `ENTRY_MAX_CONCURRENT` (the whole
+pipeline, sized for those light phases only) and two separate, tight
+gates, `FIX_MAX_CONCURRENT` and `MSMALL_MAX_CONCURRENT`, around just
+those two calls. A subject can be in at most one of the three tiers at a
+time, but two *different* subjects can independently saturate FIX and
+MSMAll at once, so the worst case sums all three:
 ```
-MSMALL_MAX_CONCURRENT*12.8 + (ENTRY_MAX_CONCURRENT-MSMALL_MAX_CONCURRENT)*5.9 <= (node core budget, with margin)
+FIX_MAX_CONCURRENT*10.1 + MSMALL_MAX_CONCURRENT*12.8
+  + (ENTRY_MAX_CONCURRENT-FIX_MAX_CONCURRENT-MSMALL_MAX_CONCURRENT)*5.9
+  <= (node core budget, with margin)
 ```
-At 20/6 that's ~159 of 192 cores worst-case, versus a flat cap of ~12
-before -- and because the two per-phase durations differ so much,
-modeling steady-state throughput as two tandem queues (`min(ENTRY/4.9h,
-MSMALL/1h)`) rather than one combined queue (`ENTRY/(4.9h+1h)`) predicts
-roughly double the subjects/hour per node.
+At 17/6/6 that's ~167 of 192 cores worst-case. Measured throughput
+before any of this (a flat cap of 12): ~3.0 subjects/hour/node. After the
+(flawed) two-tier version: ~4.0/hour/node, a real +33% -- well short of
+the ~2x a tandem-queue model predicted, because that model also assumed
+FIX was cheap. The three-tier version hasn't been measured over a long
+enough window yet to report a number; if you're reading this in the repo
+rather than watching it happen, check whether a later commit added one
+before trusting either figure.
+
+**If you're adapting this to a different HCP Pipelines version or
+container build:** don't assume 5.9/10.1/12.8 cores/subject transfer.
+Measure your own MCR-compiled steps directly (`ps -eo pid,pcpu,comm` for
+processes named `MCR Main thread`, summed and divided by subject count)
+before trusting any flat concurrency cap that includes them.
 
 **GPU eddy (stage 2) doesn't respond to the same fix.** NVIDIA MPS was
 tried on stage 2 to address its own low utilization (23-28% per GPU,
