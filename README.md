@@ -34,7 +34,9 @@ container/
 tools/
   sem_tool.sh, sem_drain.sh             live-retune stage 1's concurrency caps
   gpu_sem_add.sh                        same idea, per-GPU, for stage 2
+  qc_stage1.py                          verify FreeSurfer/PostFreeSurfer output
   qc_stage2.py                          verify eddy output before stage 3 sees it
+  qc_stage3.py                          verify MSMAll output
   scope_report.py                       cohort x protocol completion counts
 ```
 
@@ -177,23 +179,84 @@ semaphore over an unlinked FIFO (`exec 3<>fifo`, N tokens written at
 startup, `read -u 3` / `echo >&3` to take/return a slot), the concurrency cap
 can be **raised or lowered on an already-running job** without restarting
 it, by writing (or reading-and-discarding) tokens on that FIFO from another
-`srun --overlap` session. `tools/sem_tool.sh status|add`,
-`tools/sem_drain.sh`, and `tools/gpu_sem_add.sh` (same idea, per-GPU, for
-stage 2) implement this. Useful when the node turns out to have far more
-headroom than the original request assumed -- check CPU `user+sys` time and
-GPU `nvidia-smi` utilization (not just load average, which conflates
-runnable and uninterruptible-sleep processes) before pushing concurrency
-higher.
+`srun --overlap` session -- though draining only works while there's slack
+(unclaimed tokens sitting in the pipe); once a job's subject list is fully
+forked and every token is checked out, a backlog of waiting subjects wins
+the race for any freed token faster than an external drain can, and the
+only reliable fix is cancel + resubmit with a corrected default. `tools/
+sem_tool.sh status|add`, `tools/sem_drain.sh`, and `tools/gpu_sem_add.sh`
+(same idea, per-GPU, for stage 2) implement the live-retune side. Useful
+when the node turns out to have far more headroom than the original
+request assumed -- check CPU `user+sys` time and GPU `nvidia-smi`
+utilization (not just load average, which conflates runnable and
+uninterruptible-sleep processes) before pushing concurrency higher.
 
-## QC before stage 3 (`tools/qc_stage2.py`)
+**Stage 3 uses two separate semaphores, not one.** MSMAll's compiled
+MCR binary (`MSMregression`, `--matlab-run-mode=0`) ignores
+`OMP_NUM_THREADS`/`ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS` the same way FIX's
+classifier does, and measured at ~437 threads / ~12.8 real CPU-cores per
+subject -- by far the heaviest of stage 3's steps (PostEddy/fMRIVolume/
+fMRISurface/ICAFIX/PostFix measured at ~5.9 cores/subject in their own
+worst case). A single flat concurrency cap sized to survive every
+concurrent subject being in MSMAll at once (safe, but only ~12 total)
+left the lighter steps badly underusing the node whenever subjects
+*weren't* all in MSMAll -- which is most of the time, since per-subject
+logs show MSMAll only takes ~1 hour of the ~5.9-hour total pipeline (the
+steps before it take ~4.9 hours). So `ENTRY_MAX_CONCURRENT` (admission
+into the whole pipeline) and `MSMALL_MAX_CONCURRENT` (a second, separate
+gate around only the MSMAll call) are sized independently against the
+worst *combined* case -- `MSMALL_MAX_CONCURRENT` subjects all in MSMAll
+plus every other admitted subject simultaneously in the next-heaviest
+phase:
+```
+MSMALL_MAX_CONCURRENT*12.8 + (ENTRY_MAX_CONCURRENT-MSMALL_MAX_CONCURRENT)*5.9 <= (node core budget, with margin)
+```
+At 20/6 that's ~159 of 192 cores worst-case, versus a flat cap of ~12
+before -- and because the two per-phase durations differ so much,
+modeling steady-state throughput as two tandem queues (`min(ENTRY/4.9h,
+MSMALL/1h)`) rather than one combined queue (`ENTRY/(4.9h+1h)`) predicts
+roughly double the subjects/hour per node.
+
+**GPU eddy (stage 2) doesn't respond to the same fix.** NVIDIA MPS was
+tried on stage 2 to address its own low utilization (23-28% per GPU,
+~1GB of ~95GB VRAM used per subject) -- correctly routed through one MPS
+control daemon per physical GPU, confirmed via `nvidia-smi`'s per-GPU
+process listing. Utilization at full concurrency came back *worse*
+(5-8%), not better: eddy's low utilization isn't multiple processes
+serializing on the GPU (which MPS fixes), it's inherent to eddy's own
+sequential per-iteration host<->device round trips, and MPS's extra
+proxy hop made each round trip a little slower. Reverted back to plain
+per-GPU `CUDA_VISIBLE_DEVICES` sharing (`02_stage2_gpu_eddy.sbatch` as
+published). If you try MPS again on different data/hardware, verify
+`nvidia-smi --query-compute-apps=pid,used_memory,gpu_uuid` actually shows
+processes spread across distinct GPU UUIDs before trusting a utilization
+reading -- a client that also sets its own `CUDA_VISIBLE_DEVICES` (instead
+of relying solely on `CUDA_MPS_PIPE_DIRECTORY` to select the GPU) will
+silently misroute nearly everything onto one physical card.
+
+## QC (`tools/qc_stage1.py`, `tools/qc_stage2.py`, `tools/qc_stage3.py`)
 
 Some subjects get attempted more than once (a node dies, a job is
 resubmitted); a file simply existing doesn't mean the run that produced it
-finished cleanly. Before feeding `eddy`'s output to stage 3, this checks that
-the corrected 4-D series' volume count agrees with the gradient table, the
-rotated bvecs, eddy's own per-volume parameter file, and `index.txt` --
-which is exactly what would silently break tensor fitting downstream if any
-one of them were left over from an interrupted run.
+finished cleanly, and none of the stage scripts' own exit-code checks catch
+a step that returns 0 but writes truncated or incomplete output. Each QC
+tool re-derives pass/fail from the actual output files instead of trusting
+the `.stageN_complete` sentinel:
+
+- **`qc_stage1.py`** -- confirms `recon-all.log` reports a clean finish,
+  `aparc+aseg.mgz` is a plausible size, and both hemispheres'
+  PostFreeSurfer 32k surface files exist and aren't truncated.
+- **`qc_stage2.py`** -- before feeding `eddy`'s output to stage 3, checks
+  that the corrected 4-D series' volume count agrees with the gradient
+  table, the rotated bvecs, eddy's own per-volume parameter file, and
+  `index.txt` -- which is exactly what would silently break tensor fitting
+  downstream if any one of them were left over from an interrupted run.
+- **`qc_stage3.py`** -- confirms the final MSMAll-registered, ICA-FIX-cleaned
+  dense timeseries and both hemispheres' MSMAll sphere registrations exist
+  and aren't truncated. Subjects with fewer than 2 fMRI runs legitimately
+  skip FIX/PostFix/MSMAll entirely (this pipeline's multi-run FIX design
+  needs runs to concatenate) -- the tool checks each subject's actual run
+  count first so it doesn't flag those as failures.
 
 ## License
 

@@ -1,42 +1,39 @@
 #!/usr/bin/env bash
 # Stage 2 (GPU node): DiffPreprocPipeline_Eddy.sh only -- the one sub-step
-# of DiffusionPreprocessing that actually benefits from GPU (eddy_cuda11.0).
-# Depends on Stage 1 having produced each subject's T1w/Diffusion/ pre-eddy
-# working files.
+# of DiffusionPreprocessing that actually benefits from GPU
+# (eddy_cuda11.0). Depends on Stage 1 having produced each subject's
+# T1w/Diffusion/ pre-eddy working files.
 #
-# Subjects are spread over the NUM_GPUS allocated GPUs, PER_GPU of them
-# sharing each card via CUDA_VISIBLE_DEVICES. This is not oversubscription
-# for its own sake: measured on H100s, one eddy_cuda11.0 run holds ~1GB of
-# the card's 80GB+ VRAM and keeps a single card only 30-50% utilised (its
-# per-iteration host<->device synchronization leaves real idle gaps), so
-# concurrency is the way to actually use the hardware. Push PER_GPU up
-# gradually and watch `nvidia-smi --query-gpu=utilization.gpu`, not load
-# average (which conflates runnable and uninterruptible-sleep processes) --
-# see tools/gpu_sem_add.sh to raise it on an already-running job without
-# restarting.
+# MPS was tried and reverted (2026-09-26): with MPS correctly routing each
+# subject to its own physical GPU (confirmed via nvidia-smi per-GPU process
+# lists), utilization at full concurrency (65 subjects / 4 GPUs) measured
+# 5-8%, WORSE than plain CUDA_VISIBLE_DEVICES sharing's already-low 23-28%.
+# Conclusion: eddy's low GPU utilization isn't multi-process contention MPS
+# can fix -- it's inherent to eddy's own sequential per-iteration host<->
+# device round trips, and MPS's extra proxy hop made each round trip a
+# little slower instead. Back to plain per-GPU CUDA_VISIBLE_DEVICES sharing.
 #
-# To scale NUM_GPUS: change it below AND --cpus-per-task/--mem/--gres
-# together, in the same ratio (this cluster's job-submit policy caps CPUs at
-# 10 per requested GPU: 3 GPUs -> 30 CPUs -> ~500G was generous headroom at
-# ~1GB/subject, adjust to taste). #SBATCH directives are plain text parsed by
-# sbatch itself, so NUM_GPUS can be overridden by environment but --gres
-# cannot -- if you need more total GPUs than one job's per-user GPU quota
-# allows in a single request, submit this script again with a smaller
-# --gres=gpu:h100:N; Slurm places both on the same physical GPU node (GRES is
-# tracked per-device, not per-job) as long as enough cards are free, so two
-# submissions (e.g. 3 + 1) reach 4 total GPUs while a single quota still caps
-# how many *nodes* you occupy at once.
+# Subjects are spread over the allocated GPUs, PER_GPU of them sharing
+# each card via CUDA_VISIBLE_DEVICES. Resumable via a
+# "<output>/<subject>/.stage2_complete" sentinel.
 #
-# Resumable via a "<output>/<subject>/.stage2_complete" sentinel.
+# To scale NUM_GPUS: change --gres/NUM_GPUS/--cpus-per-task/--mem together,
+# in the same ratio (this cluster's job-submit policy caps CPUs at 10 per
+# requested GPU: 4 GPUs -> 40 CPUs -> 650G was generous headroom at
+# ~1GB/subject VRAM, adjust to taste). A single job can request as many
+# GPUs as your account's quota allows; only split into multiple submissions
+# if you need more GPUs than fit in one job's own per-job request limit,
+# in which case Slurm places them on the same physical GPU node (GRES is
+# tracked per-device, not per-job) as long as enough cards are free.
 #
 # SUBJECT_LIST format: one SUBJECT per line.
 # Usage: sbatch --job-name=stage2_batch 02_stage2_gpu_eddy.sbatch SUBJECT_LIST
 #SBATCH --partition=gcalc2
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=30
-#SBATCH --mem=500G
-#SBATCH --gres=gpu:h100:3
+#SBATCH --cpus-per-task=40
+#SBATCH --mem=650G
+#SBATCH --gres=gpu:h100:4
 #SBATCH --time=30-00:00:00
 #SBATCH --output=logs/stage2_batch_%x_%j.out
 #SBATCH --error=logs/stage2_batch_%x_%j.err
@@ -51,7 +48,7 @@ SIF=${HCP_SIF:-/data/juntendodb/containers/hcp_pipelines_v6_complete_20260831.si
 LICENSE=${FS_LICENSE:-$HOME/.licenses/freesurfer/license.txt}  # your own FreeSurfer license -- see https://surfer.nmr.mgh.harvard.edu/registration.html
 test -s "$LICENSE"
 
-NUM_GPUS=${NUM_GPUS:-3}          # must match #SBATCH --gres above (see header)
+NUM_GPUS=${NUM_GPUS:-4}          # must match #SBATCH --gres above (see header)
 PER_GPU=${PER_GPU:-16}
 
 GPU_SEM_FIFO=$(mktemp -u /tmp/gpu_sem.XXXXXX)

@@ -9,15 +9,10 @@
 # Depends on Stage 1 (structural + PreEddy) for every subject, and on
 # Stage 2 (GPU eddy) for subjects with DWI data before PostEddy can run.
 #
-# Concurrency: all these stages measured at a few GB to ~14GB peak RAM per
-# subject (CPU-bound, not memory-bound -- see 2026-09-11 investigation).
-# Capped at a CPU-budget-appropriate concurrency; no PostFreeSurfer-style
-# outlier stage here.
-#
 # Resumable via a "<output>/<subject>/.stage3_complete" sentinel.
 #
 # SUBJECT_LIST format: one SUBJECT per line.
-# Usage: sbatch --job-name=stage3_batch run_stage3_post_eddy_rest.sbatch SUBJECT_LIST
+# Usage: sbatch --job-name=stage3_batch 03_stage3_posteddy_fmri.sbatch SUBJECT_LIST
 #SBATCH --partition=ccalc
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -37,12 +32,37 @@ SIF=${HCP_SIF:-/data/juntendodb/containers/hcp_pipelines_v6_complete_20260831.si
 LICENSE=${FS_LICENSE:-$HOME/.licenses/freesurfer/license.txt}  # your own FreeSurfer license -- see https://surfer.nmr.mgh.harvard.edu/registration.html
 test -s "$LICENSE"
 
-ENTRY_MAX_CONCURRENT=80
+# Two-tier concurrency (2026-09-27): a single flat cap sized for MSMAll's
+# worst case (12.8 measured cores/subject) left PostEddy/fMRIVolume/
+# fMRISurface/PostFix badly underusing the node whenever subjects weren't
+# actually in MSMAll. Split into two semaphores instead: ENTRY_MAX_CONCURRENT
+# admits subjects into the whole pipeline (sized for ICAFIX, the worst *other*
+# phase, measured 2026-09-25 at 80 concurrent -> load 474/192, i.e. ~5.9
+# cores/subject), and a separate, much tighter MSMALL_MAX_CONCURRENT gates
+# only the MSMAll step itself. Worst realistic case is MSMALL_MAX_CONCURRENT
+# subjects all in MSMAll at once (12.8 each) plus every other admitted
+# subject simultaneously in ICAFIX (5.9 each):
+#   6*12.8 + (20-6)*5.9 = 76.8 + 82.6 = 159.4, safely under the 192-core budget.
+# A subject waiting for an MSMAll slot costs ~nothing (blocked on a pipe
+# read) since FIX/PostFix -- the phases before MSMAll in this per-subject
+# sequential pipeline -- have already finished for it by then.
+#
+# Measured from real subject logs (2026-09-27): PostEddy..PostFix averages
+# ~4.9 hours, MSMAll itself only ~1 hour -- so per-node throughput is
+# min(ENTRY_MAX_CONCURRENT/4.9h, MSMALL_MAX_CONCURRENT/1h) instead of the
+# flat design's single_cap/(4.9h+1h); at 20/6 that's ~4.1 subjects/hour vs.
+# the flat cap=12 design's ~2.0/hour -- roughly double.
+ENTRY_MAX_CONCURRENT=20
+MSMALL_MAX_CONCURRENT=6
 PER_SUBJECT_THREADS=2
 
 SEM_FIFO=$(mktemp -u /tmp/stage3_sem.XXXXXX)
 mkfifo "$SEM_FIFO"; exec 3<>"$SEM_FIFO"; rm -f "$SEM_FIFO"
 for _ in $(seq 1 "$ENTRY_MAX_CONCURRENT"); do echo >&3; done
+
+MSMALL_SEM_FIFO=$(mktemp -u /tmp/stage3_msmall_sem.XXXXXX)
+mkfifo "$MSMALL_SEM_FIFO"; exec 4<>"$MSMALL_SEM_FIFO"; rm -f "$MSMALL_SEM_FIFO"
+for _ in $(seq 1 "$MSMALL_MAX_CONCURRENT"); do echo >&4; done
 
 run_post_eddy() {
   local subject=$1
@@ -119,6 +139,12 @@ process_subject() {
         run_advanced_fmri fix "$subject"
         echo "[$(date +%T)] === ${subject}: PostFix ==="
         run_advanced_fmri postfix "$subject"
+
+        echo "[$(date +%T)] === ${subject}: waiting for MSMAll slot (max ${MSMALL_MAX_CONCURRENT} concurrent, separate cap) ==="
+        local have_msmall_slot=0
+        release_msmall_slot() { (( have_msmall_slot == 1 )) && { echo >&4; have_msmall_slot=0; }; }
+        trap release_msmall_slot EXIT
+        read -u 4; have_msmall_slot=1
         echo "[$(date +%T)] === ${subject}: MSMAll ==="
         run_advanced_fmri msmall "$subject"
       else
@@ -152,5 +178,6 @@ for pid in "${pids[@]}"; do
 done
 
 exec 3>&-
+exec 4>&-
 echo "[$(date +%T)] STAGE3_BATCH_COMPLETE fail=${fail}"
 exit "$fail"
