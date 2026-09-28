@@ -151,6 +151,16 @@ process_subject() {
     local has_dwi=0
     if [[ -n "${HCP_DWI_POS:-}" && "${HCP_DWI_POS}" != NONE ]]; then
       has_dwi=1
+      # HCP_DWI_POS only says the manifest found diffusion series for this
+      # subject -- it says nothing about whether stage 2 (GPU eddy) has
+      # actually finished for it. Without this check, a subject list built
+      # before stage 2 catches up (or one where eddy failed/was interrupted)
+      # would run PostEddy against missing or partial eddy output instead
+      # of failing clearly at this point.
+      [[ -f "${ROOT}/output/${subject}/.stage2_complete" ]] || {
+        echo "[$(date +%T)] === ${subject}: has DWI but .stage2_complete is missing -- run stage 2 (GPU eddy) first, or run tools/qc_stage2.py to confirm it's genuinely done ==="
+        exit 4
+      }
       echo "[$(date +%T)] === ${subject}: [1/N] PostEddy ==="
       run_post_eddy "$subject"
     else

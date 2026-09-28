@@ -19,6 +19,9 @@ pipeline/
   02_stage2_gpu_eddy.sbatch             entrypoint: GPU node (H100, eddy_cuda11.0)
   03_stage3_posteddy_fmri.sbatch        entrypoint: CPU node
   repair_preeddy.sbatch                 entrypoint: CPU node, re-run PreEddy only
+  repair_posteddy_flag2.sbatch          entrypoint: CPU node, redo PostEddy's
+                                         AP/PA combine with flag=2 for subjects
+                                         already run under the old flag=1
   lib/                                  helpers the entrypoints call by path at
     hcp_env.sh                          runtime ($AMED_ROOT/scripts/<name> inside
     convert_one_subject.sh              the container) -- not meant to be run
@@ -48,6 +51,7 @@ tools/
 | 2 | `pipeline/02_stage2_gpu_eddy.sbatch` | GPU node (H100, `eddy_cuda11.0`) | `DiffPreprocPipeline_Eddy.sh --gpu=TRUE` only -- the single HCP sub-step that is GPU-accelerated |
 | 3 | `pipeline/03_stage3_posteddy_fmri.sbatch` | CPU node | PostEddy, fMRIVolume, fMRISurface, ICAFIX, PostFix, MSMAll (MATLAB Runtime / `--matlab-run-mode=0`, no MATLAB license needed) |
 | repair | `pipeline/repair_preeddy.sbatch` | CPU node | Re-runs only PreEddy for subjects whose manifest had to be regenerated (see the DWI-gate note below) |
+| repair | `pipeline/repair_posteddy_flag2.sbatch` | CPU node | Redoes PostEddy with `--combine-data-flag=2` for subjects already processed under the old, incorrect `flag=1` (see "PostEddy's AP/PA combine flag" below) -- reuses existing eddy output, writes to an isolated `Diffusion_flag2/` directory rather than overwriting the original |
 
 Each stage is one `sbatch` submission per **whole node**, with its own
 internal scheduler (a Bash counting semaphore over an unlinked FIFO) rather
@@ -152,6 +156,26 @@ data, because both came from real failures in a ~5,700-subject, ~20-site run:
   the "gradient table" and their different readout time makes the effective
   echo spacing ambiguous. A subject_manifest.json is written to
   `raw_nifti/<subject>/`.
+- **AP/PA direction is read from the series name first, metadata second --
+  and only the name is trusted.** `direction_label()` matches `_AP_`/`_PA_`
+  in the `SeriesDescription` before falling back to the DICOM
+  `PhaseEncodingDirection` field. When both are present it now cross-checks
+  them and prints a `WARNING` to stderr on disagreement, but it still goes
+  with the name -- a series mislabeled at the scanner, or a site whose
+  naming convention doesn't mean what this cohort's does, needs a human to
+  look at that warning, not an automatic override. This is a different
+  failure mode from the AP/PA *gradient-table* mismatch described under
+  "PostEddy's AP/PA combine flag" below: that one is about whether two
+  correctly-labeled AP/PA series can be validly paired at all; this one is
+  about whether "AP" and "PA" were assigned to the right series in the
+  first place.
+- **T1w/T2w selection silently takes the first match if more than one
+  series matches.** `HCP_T1`/`HCP_T2` are built from `t1[0]`/`t2[0]`. A
+  repeated acquisition (motion, protocol restart) or a second series that
+  also matches the vendor terms above means there's a real choice being
+  made, not just "the" T1w -- a `WARNING` is now printed listing every
+  candidate and which one was picked, so check it rather than assuming the
+  first series in acquisition order was the usable one.
 
 If DICOM anonymization stripped the Siemens CSA field dcm2niix normally
 reads `DwellTime` from, `resolve_dwell_time()` derives it from
@@ -187,8 +211,23 @@ depends on this flag.
 `qc_stage2.py`'s volume-count/bval-length/bvec-length checks do not catch
 this: they confirm eddy's own output is internally consistent, not whether
 the two volumes flag=1 is about to average actually represent the same
-diffusion encoding. If you switch back to flag=1 on other data, check the
-raw per-volume gradient tables directly first.
+diffusion encoding. `qc_stage3.py` now checks that PostEddy's *combined*
+output (`T1w/Diffusion/{data.nii.gz,bvals,bvecs}`) has matching volume
+counts, which would catch a flag silently dropping or duplicating volumes
+-- but it still can't tell you whether flag=1 averaged the right pairs,
+since that requires the raw, pre-merge gradient tables this pass has no
+way to reconstruct from merged output alone. If you switch back to flag=1
+on other data, check those raw per-volume gradient tables directly first.
+
+**Subjects already processed under the old flag=1 are not automatically
+fixed by changing the flag** -- stage 3 skips anything with
+`.stage3_complete` already set, and there is no in-place way to redo just
+one step of an already-completed subject. `pipeline/repair_posteddy_flag2.sbatch`
+reprocesses a subject list with flag=2 into an isolated `Diffusion_flag2/`
+directory (copying the existing `eddy/`/`topup/` output rather than
+rerunning eddy, and never touching the original `Diffusion/` or the
+subject's fMRI outputs). Decide for yourself, after checking the new
+output, whether and how to promote it in place of the original.
 
 ## Concurrency
 
@@ -312,7 +351,18 @@ the `.stageN_complete` sentinel:
   and aren't truncated. Subjects with fewer than 2 fMRI runs legitimately
   skip FIX/PostFix/MSMAll entirely (this pipeline's multi-run FIX design
   needs runs to concatenate) -- the tool checks each subject's actual run
-  count first so it doesn't flag those as failures.
+  count first so it doesn't flag those as failures. Independently of the
+  fMRI checks, it also confirms PostEddy's combined diffusion output
+  (`T1w/Diffusion/{data.nii.gz,bvals,bvecs}`) has matching volume counts,
+  for any subject that has one -- see "PostEddy's AP/PA combine flag"
+  above for what this can and can't catch.
+
+Stage 3 also checks `.stage2_complete` itself before running PostEddy on a
+subject with diffusion data, rather than only checking the manifest for
+whether diffusion series exist. The manifest says a subject *has* DWI; it
+says nothing about whether stage 2 (GPU eddy) has actually *finished* for
+it, and running PostEddy against missing or partial eddy output is a
+confusing way to find that out.
 
 ## License
 

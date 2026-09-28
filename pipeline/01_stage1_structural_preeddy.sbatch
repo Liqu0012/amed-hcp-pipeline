@@ -14,15 +14,24 @@
 # where memory actually requires it:
 #   ENTRY_MAX_CONCURRENT -- caps conversion/PreFreeSurfer/FreeSurfer/PreEddy
 #     entries (all CPU-bound, a few GB each: ~1.7GB PreFS, ~7.6GB FreeSurfer
-#     peak). Sized so that, even in the worst case of POST_MAX_CONCURRENT
-#     PostFreeSurfer instances running at once (~420GB each), the remaining
-#     node memory still covers this many entry-phase subjects at FreeSurfer's
-#     ~7.6GB peak: (1536GB - 3*420GB) / 7.6GB =~ 36; set to 30 for margin.
-#     At 1 thread/subject, 30 concurrent only uses 30 of 192 cores, so CPU
-#     is not the constraint -- memory co-occurrence with PostFreeSurfer is.
-#   POST_MAX_CONCURRENT  -- PostFreeSurfer alone measured ~330-420GB peak
-#     RAM (native-resolution MSMSulc registration, independent of thread
-#     count). A 1536GB node only safely holds 3 of these at once.
+#     peak).
+#   POST_MAX_CONCURRENT  -- caps concurrent PostFreeSurfer instances.
+#
+# A first measurement (native-resolution MSMSulc registration, WITH
+# PostFreeSurferPipeline.sh's QC scene rendering) found PostFreeSurfer
+# peaking at ~330-420GB RAM per subject -- on a 1536GB node that would
+# only safely hold ~3 at once, and would cap ENTRY_MAX_CONCURRENT near 30
+# to leave headroom for concurrent FreeSurfer entries. run_fmri_generic.sh/
+# run_structural_generic.sh's `post` stage passes PostFreeSurferPipeline.sh
+# `--structural-qc=no`, which disables exactly that scene-rendering step;
+# measured peak RAM per subject then drops to a few hundred MB (from
+# FreeSurfer's own `touch/rusage.*.dat` records), not hundreds of GB --
+# at that footprint memory stops being the binding constraint and CPU core
+# count is, hence the much higher ENTRY_MAX_CONCURRENT=150/
+# POST_MAX_CONCURRENT=25 below. If you build a variant that re-enables
+# structural QC scenes (e.g. `--structural-qc=yes` for visual inspection),
+# drop back to roughly ENTRY=30/POST=3 for that variant -- don't reuse
+# these higher numbers with QC rendering turned back on.
 #
 # Resumable via a "<output>/<subject>/.stage1_complete" sentinel -- rerunning
 # with the same (or a superset) SUBJECT_LIST skips anything already done.

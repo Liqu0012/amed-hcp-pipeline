@@ -82,15 +82,32 @@ def has_any(text, terms):
     return any(term in text for term in terms)
 
 
+PE_TO_LABEL = {"j-": "AP", "j": "PA", "i-": "LR", "i": "RL"}
+
+
 def direction_label(item):
     desc = item["description"].upper()
+    by_name = None
     if re.search(r"(^|_)AP($|_)", desc):
-        return "AP"
-    if re.search(r"(^|_)PA($|_)", desc):
-        return "PA"
-    return {"j-": "AP", "j": "PA", "i-": "LR", "i": "RL"}.get(
-        item["phase_encoding"], item["phase_encoding"] or "UNKNOWN"
-    )
+        by_name = "AP"
+    elif re.search(r"(^|_)PA($|_)", desc):
+        by_name = "PA"
+    if by_name is None:
+        return PE_TO_LABEL.get(item["phase_encoding"], item["phase_encoding"] or "UNKNOWN")
+    # Trust the series name (matches the convention this cohort's sites use),
+    # but cross-check it against the DICOM PhaseEncodingDirection when that
+    # metadata is present -- a series named "AP" whose actual encoding is
+    # "PA" (mislabeled at the scanner, or a site using an unfamiliar naming
+    # convention) would otherwise be silently paired backwards with nothing
+    # to show for it until eddy/topup output looks wrong.
+    by_metadata = PE_TO_LABEL.get(item["phase_encoding"])
+    if by_metadata is not None and by_metadata != by_name:
+        print("WARNING: %s named %r but PhaseEncodingDirection %r implies %s, not %s "
+              "-- trusting the name, but verify this site's naming against its actual "
+              "phase encoding before relying on AP/PA pairing for this series" %
+              (item.get("series", "?"), item["description"], item["phase_encoding"],
+               by_metadata, by_name), file=sys.stderr)
+    return by_name
 
 
 def compact(item):
@@ -132,6 +149,19 @@ def main():
     T2_TERMS = ("t2w", "t2_spc", "cube", "vista")
     t1 = [x for x in series if has_any(x["description"], T1_TERMS) and "scout" not in x["description"].lower()]
     t2 = [x for x in series if has_any(x["description"], T2_TERMS) and "scout" not in x["description"].lower()]
+    # HCP_T1/HCP_T2 below use t1[0]/t2[0] -- silently the first match in
+    # whatever order the series were discovered in, usually acquisition
+    # order. A repeated acquisition (motion, protocol restart) or a second
+    # series that also happens to match these terms means there IS a real
+    # choice being made here, not just "the" T1w; flag it instead of
+    # deciding it silently.
+    for label, items in (("T1w", t1), ("T2w", t2)):
+        if len(items) > 1:
+            print("WARNING: %d %s candidates for this subject (%s) -- using the first "
+                  "(series %s); check whether this is a repeated acquisition and "
+                  "confirm series %s is the one you want, not a discarded repeat" %
+                  (len(items), label, [x["description"] for x in items],
+                   items[0]["series"], items[0]["series"]), file=sys.stderr)
     bold_all = [x for x in series if has_any(x["description"], ("bold", "rfmri"))]
     bold = [x for x in bold_all if "sbref" not in x["description"].lower()]
     sbref = [x for x in bold_all if "sbref" in x["description"].lower()]
