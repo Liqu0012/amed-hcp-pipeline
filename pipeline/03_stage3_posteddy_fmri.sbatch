@@ -74,6 +74,28 @@ for _ in $(seq 1 "$MSMALL_MAX_CONCURRENT"); do echo >&4; done
 
 run_post_eddy() {
   local subject=$1
+  # --combine-data-flag=2 (was 1): flag=1 averages each Pos/Neg (AP/PA)
+  # volume pair by acquisition index, which is only valid if AP and PA are
+  # gradient-direction-matched at each index. Verified directly against raw
+  # .bval files across multiple sites/subjects in this cohort's multi-shell
+  # (b~700 / b~2000) protocol that this is NOT the case: pairing by index
+  # mixes shells (e.g. one subject's index 2 was b=2010 on AP vs b=695 on
+  # PA, gradient directions ~89.8 degrees apart), and even the best
+  # possible one-to-one direction matching *within* a shell across the
+  # whole acquisition has a median angle of 17-27 degrees with no pairs
+  # under 5 degrees -- i.e. there is no valid pairing to average, so
+  # flag=1 silently produces physically meaningless composite volumes for
+  # roughly two-thirds of the non-b0 pairs. flag=2 keeps every eddy-
+  # corrected volume unmerged instead. This does not require rerunning
+  # eddy itself (stage 2): eddy corrects each original volume independently
+  # of how PostEddy later combines them, so already-computed eddy output
+  # can be reused -- only PostEddy and everything downstream of it
+  # (registration, tensor/ODF fitting, tractography) depends on this flag.
+  # If your site's AP/PA acquisitions genuinely share a gradient table
+  # (check this directly against your own raw .bval/.bvec files, the same
+  # way this was found here -- don't assume it from volume counts or
+  # filenames matching), flag=1 is the more standard HCP choice and fine
+  # to use.
   apptainer exec --cleanenv \
     --env OMP_NUM_THREADS="$PER_SUBJECT_THREADS" \
     --env ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS="$PER_SUBJECT_THREADS" \
@@ -81,7 +103,7 @@ run_post_eddy() {
     --bind "${LICENSE}:/opt/freesurfer-license/license.txt:ro" --bind "${ROOT}:/work" \
     "$SIF" /bin/bash -c "source /work/scripts/hcp_env.sh; \${HCPPIPEDIR}/DiffusionPreprocessing/DiffPreprocPipeline_PostEddy.sh \
       --path=/work/output --session=${subject} --dwiname=Diffusion \
-      --gdcoeffs=NONE --dof=6 --select-best-b0=FALSE --combine-data-flag=1"
+      --gdcoeffs=NONE --dof=6 --select-best-b0=FALSE --combine-data-flag=2"
 }
 
 run_fmri() {

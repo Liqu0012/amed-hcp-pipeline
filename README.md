@@ -159,6 +159,37 @@ reads `DwellTime` from, `resolve_dwell_time()` derives it from
 carry `BaseResolution`, so this cohort's few GE subjects still need their
 own dwell-time derivation; that's an open item, not solved here).
 
+## PostEddy's AP/PA combine flag (`pipeline/03_stage3_posteddy_fmri.sbatch`)
+
+`DiffPreprocPipeline_PostEddy.sh --combine-data-flag=N` controls how the
+two opposite-phase-encoding (AP/PA) acquisitions get combined after eddy:
+`1` averages each Pos/Neg volume pair by acquisition index; `2` keeps
+every corrected volume unmerged. `1` is the more common HCP choice, but it
+is only correct if AP and PA are gradient-direction-matched at each index
+-- and that has to be checked against your own raw `.bval`/`.bvec` files,
+not assumed from matching volume counts or filenames.
+
+This cohort's multi-shell (b~700 / b~2000) protocol is not matched: pairing
+by index mixed shells (one subject's index 2 was b=2010 on AP vs. b=695 on
+PA, gradient directions ~89.8 degrees apart, verified directly against the
+raw `.bval` files), and even the best possible one-to-one direction
+matching *within* a shell across the whole acquisition has a median angle
+of 17-27 degrees with no pairs under 5 degrees -- there is no valid pairing
+to average here, at any index. `--combine-data-flag=1` was silently
+producing physically meaningless composite volumes for roughly two-thirds
+of the non-b0 pairs; `03_stage3_posteddy_fmri.sbatch` uses `flag=2`
+instead. This does **not** require rerunning eddy (stage 2) -- eddy
+corrects each original volume independently of how PostEddy later combines
+them, so already-computed eddy output is reusable; only PostEddy and
+everything downstream (registration, tensor/ODF fitting, tractography)
+depends on this flag.
+
+`qc_stage2.py`'s volume-count/bval-length/bvec-length checks do not catch
+this: they confirm eddy's own output is internally consistent, not whether
+the two volumes flag=1 is about to average actually represent the same
+diffusion encoding. If you switch back to flag=1 on other data, check the
+raw per-volume gradient tables directly first.
+
 ## Concurrency
 
 Stage 1's defaults (`ENTRY_MAX_CONCURRENT`, `POST_MAX_CONCURRENT` near the
