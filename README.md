@@ -55,8 +55,9 @@ tools/
 
 Each stage is one `sbatch` submission per **whole node**, with its own
 internal scheduler (a Bash counting semaphore over an unlinked FIFO) rather
-than one Slurm job per subject -- see "Concurrency" below for why, and
-`tools/` for how to retune it on a job that's already running.
+than one Slurm job per subject. `tools/sem_tool.sh`, `sem_drain.sh`, and
+`gpu_sem_add.sh` can retune the concurrency cap on a job that's already
+running, without restarting it.
 
 **Adding a connectome step (optional, not included):** stage 3 stops at
 MSMAll on purpose -- tractography/connectome generation is site-specific and
@@ -228,106 +229,6 @@ directory (copying the existing `eddy/`/`topup/` output rather than
 rerunning eddy, and never touching the original `Diffusion/` or the
 subject's fMRI outputs). Decide for yourself, after checking the new
 output, whether and how to promote it in place of the original.
-
-## Concurrency
-
-Stage 1's defaults (`ENTRY_MAX_CONCURRENT`, `POST_MAX_CONCURRENT` near the
-top of the script) came from *measuring*, not guessing:
-
-- FreeSurfer's `recon-all` is a long chain of small, mostly-serial steps, so
-  giving one subject more OpenMP threads bought only ~1.5x speedup --
-  concurrency (more subjects at once, one thread each) beats per-subject
-  parallelism here.
-- PostFreeSurfer with QC scene rendering disabled peaks at a few hundred MB
-  to ~2GB per subject (measured from FreeSurfer's own
-  `touch/rusage.*.dat` records), not the "hundreds of GB" a naive first
-  estimate suggested -- so memory is rarely the binding constraint; CPU core
-  count is.
-
-Because each stage runs as one long-lived `sbatch` per node with a Bash
-semaphore over an unlinked FIFO (`exec 3<>fifo`, N tokens written at
-startup, `read -u 3` / `echo >&3` to take/return a slot), the concurrency cap
-can be **raised or lowered on an already-running job** without restarting
-it, by writing (or reading-and-discarding) tokens on that FIFO from another
-`srun --overlap` session -- though draining only works while there's slack
-(unclaimed tokens sitting in the pipe); once a job's subject list is fully
-forked and every token is checked out, a backlog of waiting subjects wins
-the race for any freed token faster than an external drain can, and the
-only reliable fix is cancel + resubmit with a corrected default. `tools/
-sem_tool.sh status|add`, `tools/sem_drain.sh`, and `tools/gpu_sem_add.sh`
-(same idea, per-GPU, for stage 2) implement the live-retune side. Useful
-when the node turns out to have far more headroom than the original
-request assumed -- check CPU `user+sys` time and GPU `nvidia-smi`
-utilization (not just load average, which conflates runnable and
-uninterruptible-sleep processes) before pushing concurrency higher.
-
-**Stage 3 uses three separate semaphores, not one.** This went through two
-iterations, both driven by the same mistake worth naming so it isn't
-repeated: measuring a *blend* of phases and treating it as one phase's
-true cost.
-
-A first flat concurrency cap (all of PostEddy/fMRIVolume/fMRISurface/
-FIX/PostFix/MSMAll sharing one admission limit) was sized to survive
-every concurrent subject being in MSMAll at once, whose compiled MCR
-binary (`MSMregression`, `--matlab-run-mode=0`) ignores `OMP_NUM_THREADS`/
-`ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS` and measured at ~437 threads /
-~12.8 real CPU-cores per subject. That cap (~12 total) left every *other*
-step badly underusing the node whenever subjects weren't all in MSMAll --
-which is most of the time, since per-subject logs show MSMAll takes only
-~1 hour of the ~5.9-hour total pipeline. So a second version split off a
-dedicated `MSMALL_MAX_CONCURRENT` gate and raised the general
-`ENTRY_MAX_CONCURRENT`, sized against a "~5.9 cores/subject" figure for
-everything else -- which turned out to be a blend from a mixed-phase
-measurement, not FIX's own cost. Raising `ENTRY_MAX_CONCURRENT` let
-subjects pile up in FIX *specifically* (19 concurrent on one node), and
-load hit 474/192 again. Direct measurement of FIX's own MCR classifier
-processes showed ~10.1 real cores/subject -- essentially as heavy as
-MSMAll, not 5.9, because FIX is *also* a compiled MCR binary that ignores
-the same thread-limiting env vars.
-
-The actual light phases are only PostEddy/fMRIVolume/fMRISurface/PostFix.
-So there are three semaphores: `ENTRY_MAX_CONCURRENT` (the whole
-pipeline, sized for those light phases only) and two separate, tight
-gates, `FIX_MAX_CONCURRENT` and `MSMALL_MAX_CONCURRENT`, around just
-those two calls. A subject can be in at most one of the three tiers at a
-time, but two *different* subjects can independently saturate FIX and
-MSMAll at once, so the worst case sums all three:
-```
-FIX_MAX_CONCURRENT*10.1 + MSMALL_MAX_CONCURRENT*12.8
-  + (ENTRY_MAX_CONCURRENT-FIX_MAX_CONCURRENT-MSMALL_MAX_CONCURRENT)*5.9
-  <= (node core budget, with margin)
-```
-At 17/6/6 that's ~167 of 192 cores worst-case. Measured throughput
-before any of this (a flat cap of 12): ~3.0 subjects/hour/node. After the
-(flawed) two-tier version: ~4.0/hour/node, a real +33% -- well short of
-the ~2x a tandem-queue model predicted, because that model also assumed
-FIX was cheap. The three-tier version hasn't been measured over a long
-enough window yet to report a number; if you're reading this in the repo
-rather than watching it happen, check whether a later commit added one
-before trusting either figure.
-
-**If you're adapting this to a different HCP Pipelines version or
-container build:** don't assume 5.9/10.1/12.8 cores/subject transfer.
-Measure your own MCR-compiled steps directly (`ps -eo pid,pcpu,comm` for
-processes named `MCR Main thread`, summed and divided by subject count)
-before trusting any flat concurrency cap that includes them.
-
-**GPU eddy (stage 2) doesn't respond to the same fix.** NVIDIA MPS was
-tried on stage 2 to address its own low utilization (23-28% per GPU,
-~1GB of ~95GB VRAM used per subject) -- correctly routed through one MPS
-control daemon per physical GPU, confirmed via `nvidia-smi`'s per-GPU
-process listing. Utilization at full concurrency came back *worse*
-(5-8%), not better: eddy's low utilization isn't multiple processes
-serializing on the GPU (which MPS fixes), it's inherent to eddy's own
-sequential per-iteration host<->device round trips, and MPS's extra
-proxy hop made each round trip a little slower. Reverted back to plain
-per-GPU `CUDA_VISIBLE_DEVICES` sharing (`02_stage2_gpu_eddy.sbatch` as
-published). If you try MPS again on different data/hardware, verify
-`nvidia-smi --query-compute-apps=pid,used_memory,gpu_uuid` actually shows
-processes spread across distinct GPU UUIDs before trusting a utilization
-reading -- a client that also sets its own `CUDA_VISIBLE_DEVICES` (instead
-of relying solely on `CUDA_MPS_PIPE_DIRECTORY` to select the GPU) will
-silently misroute nearly everything onto one physical card.
 
 ## QC (`tools/qc_stage1.py`, `tools/qc_stage2.py`, `tools/qc_stage3.py`)
 
