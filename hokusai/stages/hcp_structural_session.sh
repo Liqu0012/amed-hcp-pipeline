@@ -89,7 +89,7 @@ fi
     --subcortgraylabels="$HCPPIPEDIR_Config/FreeSurferSubcorticalLabelTableLut.txt" \
     --freesurferlabels="$HCPPIPEDIR_Config/FreeSurferAllLut.txt" \
     --refmyelinmaps="$HCPPIPEDIR_Templates/standard_mesh_atlases/Conte69.MyelinMap_BC.164k_fs_LR.dscalar.nii" \
-    --regname=MSMSulc --use-ind-mean=YES
+    --regname=MSMSulc --use-ind-mean=YES --structural-qc=no
   echo "=== PostFreeSurfer stage completed: $(date) ==="
 '
 

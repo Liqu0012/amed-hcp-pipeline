@@ -85,7 +85,7 @@ echo "EchoSpacing=$FMRI_ECHOSPACING_SEC"
     --path="'"$study"'" --subject="'"$session"'" \
     --fmriname="'"$runname"'" \
     --lowresmesh=32 --fmrires=2 --smoothingFWHM=2 --grayordinatesres=2 \
-    --regname=MSMSulc --fmri-qc=YES --goodvoxel=YES
+    --regname=MSMSulc --fmri-qc=NO --goodvoxel=YES
 '
 
 printf 'session=%s\nrun=%s\ncompleted=%s\n' "$session" "$runname" "$(date -Is)" > "$marker"
