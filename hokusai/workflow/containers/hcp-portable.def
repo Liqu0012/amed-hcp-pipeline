@@ -1,0 +1,13 @@
+Bootstrap: docker
+From: qunex/qunex_suite:1.5.1
+
+%labels
+    Author Portable HCP workflow
+    Version 1.5.1
+
+%environment
+    export LC_ALL=C
+    export LANG=C
+
+%runscript
+    exec /bin/bash "$@"
