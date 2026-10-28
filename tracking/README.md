@@ -37,6 +37,7 @@ Rows submitted to a system are marked `已计划` for all three stages, with the
 | Time (JST) | System | Tag | Sessions | Jobs |
 |---|---|---|---:|---|
 | 2026-10-28 20:30 (**cancelled 20:40**, none started; rows back to `待处理`) | hokusai chang (ziqing), mpc | `chang_osakau_pt_20261028` | 101 (BMB_OsakaU_PT) | structural 9706723, convert 9706724, preeddy 9706725, eddy 9706726, posteddy 9706727, fmri 9706728, icafix 9706729, msmall 9706730, dedrift 9706731, qc 9706732 |
+| 2026-10-28 21:05 | hokusai chang (ziqing), mpc, whole-node packs at 95% | `chang_osakau_pt_20261028b` | 101 (BMB_OsakaU_PT) | structural 9706744, convert 9706745, preeddy 9706746, eddy 9706747 (3 x 35 threads per node), posteddy 9706748, fmri 9706749, icafix 9706750, msmall 9706751, dedrift 9706752, qc 9706753 |
 
 ## What the checkmarks mean
 
