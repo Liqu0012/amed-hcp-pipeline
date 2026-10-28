@@ -6,8 +6,9 @@ structural, diffusion and functional preprocessing on a multi-site,
 multi-vendor (Siemens / GE) cohort, split into three stages so that only the
 one step that benefits from a GPU (`eddy`) actually asks for one.
 
-**No subject data, DICOM, or pipeline outputs are included here.** This is
-code only. Site/scanner/protocol codes that appear in a few comments (e.g.
+**No imaging data, DICOM, or pipeline outputs are included here.** The
+[session tracker](tracking/README.md) contains operational session identifiers,
+stage status and node assignments. Site/scanner/protocol codes that appear in a few comments (e.g.
 `JTD_Prisma_HARP`, `UTK_Prisma_CRHD`) are pseudonymous cohort identifiers
 used as running examples during development, not personal identifiers.
 
