@@ -6,6 +6,18 @@ Snapshot: **2026-10-28 19:05:19 JST**. These are observed records at that time, 
 - [Online session table](sessions.md): compact per-session checklist.
 - [CSV tracker](HCP_stage_tracker.csv): the same session metadata for filtering and comparison in Git.
 
+## Computation plan (2026-10-28 20:10 JST)
+
+Each session runs all three stages on one system, so the node columns for Stage 1, 2 and 3 are the same. Sessions not yet scheduled are `待处理`.
+
+| System | Sessions | Raw data | Eddy |
+|---|---:|---|---|
+| digital brain | 2,167 | 1,487 already on DB; 680 still to upload (UHI_PT 632, KyotoU2_PT 48) | GPU (H100) |
+| hokusai chang (ziqing) | 295 | BMB_OsakaU_PT 101 already on ziqing (names and sizes checked); BMB_TS KyotoU/NagoyaU/OsakaU/TokyoU/UHI/UTI 194 being uploaded | CPU |
+| hokusai wang (haruka74) | 300 | BMB_UHI_PT, the last 300 by name (`UHI_Skyraf_HARP_5328_003_MR1` to `UHI_Skyraf_HARP_7066_001_MR1`), uploaded from wu | CPU |
+
+Rationale: a HOKUSAI session costs about 7 mpc node-hours (structural 7 per node in about 8 h; CPU eddy one session per node, about 4.7 h; fMRI chain 4 per node in about 4.4 h), while DB packs 24 structural sessions per node and runs eddy on GPU. HOKUSAI therefore takes the sessions that are already there or not yet on DB. The HOKUSAI-assigned sessions have the digital brain upload plan unchecked and must be excluded from the DB upload list and the DB Stage 1 scan.
+
 | Observed item | Sessions |
 |---|---:|
 | Recompute list / digital brain upload target | 2,762 |
