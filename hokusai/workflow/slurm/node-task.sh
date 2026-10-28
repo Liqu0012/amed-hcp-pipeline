@@ -23,6 +23,10 @@ echo "Node pack stage=$HCP_STAGE chunk=$SLURM_ARRAY_TASK_ID rows=$start-$end pac
 pids=()
 rows=()
 sessions=()
+# GPU stages: Slurm lists the allocated GPUs in CUDA_VISIBLE_DEVICES; give the
+# packed sessions one GPU each, round-robin (several sessions may share a GPU).
+gpus=()
+[[ -z "${CUDA_VISIBLE_DEVICES:-}" ]] || IFS=, read -r -a gpus <<< "$CUDA_VISIBLE_DEVICES"
 for ((row=start; row<=end; row++)); do
   session=$(sed -n "${row}p" "$HCP_MANIFEST" | cut -f1)
   [[ "$session" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Unsafe session at row $row: $session" >&2; exit 2; }
@@ -35,6 +39,9 @@ for ((row=start; row<=end; row++)); do
     export MKL_NUM_THREADS="$HCP_CPUS_PER_SESSION"
     export OPENBLAS_NUM_THREADS="$HCP_CPUS_PER_SESSION"
     export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS="$HCP_CPUS_PER_SESSION"
+    if ((${#gpus[@]} > 0)); then
+      export CUDA_VISIBLE_DEVICES="${gpus[$(( (row - start) % ${#gpus[@]} ))]}"
+    fi
     bash "$root/slurm/task.sh"
   ) >"$child_log" 2>&1 &
   pids+=("$!")

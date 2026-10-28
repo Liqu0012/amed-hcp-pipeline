@@ -24,12 +24,20 @@ submit() {
   local pack="${!pack_var:?$pack_var is required}"
   local per_cpu="${!cpu_var:?$cpu_var is required}"
   local parallel="${!max_var:-${HCP_PACKED_MAX_PARALLEL:-12}}"
+  # Optional per-stage overrides, e.g. GPU eddy on DB:
+  #   HCP_EDDY_PARTITION=gcalc2 HCP_EDDY_GRES=gpu:h100:2 HCP_EDDY_NODE_CPUS=32 HCP_EDDY_NODE_MEM=500G
+  # node-task.sh spreads the packed sessions round-robin over the allocated GPUs.
+  local part_var="HCP_${upper}_PARTITION" gres_var="HCP_${upper}_GRES"
+  local ncpu_var="HCP_${upper}_NODE_CPUS" nmem_var="HCP_${upper}_NODE_MEM"
+  local partition="${!part_var:-$HCP_CPU_PARTITION}" gres="${!gres_var:-}"
+  local stage_cpus="${!ncpu_var:-$node_cpus}" stage_mem="${!nmem_var:-$node_mem}"
   local chunks=$(( (n + pack - 1) / pack ))
-  local -a args=(--parsable "--partition=$HCP_CPU_PARTITION"
+  local -a args=(--parsable "--partition=$partition"
     "--export=$export_arg,HCP_STAGE=$stage,HCP_PACK_SIZE=$pack,HCP_CPUS_PER_SESSION=$per_cpu,HCP_PACK_LOG_DIR=$log"
     "--array=1-$chunks%$parallel" "--job-name=hcp_pack_${stage}_${tag}"
-    "--time=$time" "--cpus-per-task=$node_cpus" --nodes=1 --ntasks=1
-    "--mem=$node_mem" "--output=$log/${stage}_node_%A_%a.log")
+    "--time=$time" "--cpus-per-task=$stage_cpus" --nodes=1 --ntasks=1
+    "--mem=$stage_mem" "--output=$log/${stage}_node_%A_%a.log")
+  [[ -z "$gres" ]] || args+=("--gres=$gres")
   [[ -z "${HCP_SLURM_ACCOUNT:-}" ]] || args+=("--account=$HCP_SLURM_ACCOUNT")
   [[ -z "${HCP_SLURM_QOS:-}" ]] || args+=("--qos=$HCP_SLURM_QOS")
   [[ -z "${HCP_SLURM_EXCLUDE:-}" ]] || args+=("--exclude=$HCP_SLURM_EXCLUDE")

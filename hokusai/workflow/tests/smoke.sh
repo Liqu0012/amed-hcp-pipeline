@@ -150,6 +150,15 @@ packed_eddy=$(sed -n '4p' "$tmp/sbatch.log")
 [[ "$packed_eddy" == *'--array=1-15%12'* && "$packed_eddy" == *'HCP_CPUS_PER_SESSION=112'* ]]
 [[ "$packed_eddy" == *'--dependency=afterany:2003'* ]]
 
+# Per-stage GPU override (DB): only eddy moves to the GPU partition.
+cp "$tmp/site.env" "$tmp/site_gpu.env"
+printf 'HCP_EDDY_PARTITION=gpu\nHCP_EDDY_GRES=gpu:h100:2\nHCP_EDDY_NODE_CPUS=32\nHCP_EDDY_NODE_MEM=500G\nHCP_EDDY_PACK_SIZE=16\n' >> "$tmp/site_gpu.env"
+: > "$tmp/sbatch.log"
+bash "$root/slurm/submit-packed.sh" "$tmp/site_gpu.env" "$tmp/packed_manifest.tsv" packedgpu >/dev/null
+gpu_eddy=$(sed -n '4p' "$tmp/sbatch.log")
+[[ "$gpu_eddy" == *'--partition=gpu'* && "$gpu_eddy" == *'--gres=gpu:h100:2'* && "$gpu_eddy" == *'--cpus-per-task=32'* && "$gpu_eddy" == *'--array=1-1%'* ]]
+[[ $(grep -c -- '--gres=' "$tmp/sbatch.log") -eq 1 ]]
+
 export HCP_WORKFLOW_ROOT="$root" HCP_CONFIG="$tmp/site.env" HCP_MANIFEST="$tmp/packed_manifest.tsv"
 export HCP_STAGE=structural HCP_PACK_SIZE=2 HCP_CPUS_PER_SESSION=8 HCP_PACK_LOG_DIR="$tmp/packed_logs"
 export SLURM_ARRAY_TASK_ID=1 SLURM_ARRAY_JOB_ID=3000 SLURM_JOB_ID=3001 SLURM_CPUS_PER_TASK=112

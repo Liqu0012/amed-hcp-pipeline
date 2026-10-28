@@ -68,9 +68,37 @@ bash bin/status.sh config/hokusai_packed.env ~/AMED_HCP/manifests/batch01.tsv   
 bash tests/smoke.sh                                                              # scheduler wiring
 ```
 
+## DB deployment (GPU eddy)
+
+After the DB storage reset (2026-10) the original image
+`hcp_pipelines_v6_complete_20260831.sif` and its base image were gone and the
+base recipe was never in git, so DB now uses the same QuNex 1.5.1 image as
+HOKUSAI (HCP Pipelines v6.0.0, FSL 6.0.7.23 with `eddy_cuda`).
+
+```
+/data/juntendodb/amedhcp/
+  containers/  qunex_suite-1.5.1.sif (+ .sha256, .versions.txt, pull_qunex.sbatch)
+  pipeline/    git clone of this branch (stages + workflow)
+  study/       HCP outputs
+  lists/       manifests (SESSION<TAB>/abs/path/to.zip)
+  logs/        container/ and workflow/
+```
+
+`workflow/config/db_packed.env`: CPU stages pack whole `ccalc` nodes
+(192 CPU / 1.5 TB); eddy runs `stages/hcp_diffusion_eddy_cuda.sh`
+(`--gpu=TRUE --data_is_shelled --repol`, container started with `--nv`) on
+`gcalc2` with 2 H100 per job and 16 sessions spread round-robin over the GPUs.
+
+```bash
+cd /data/juntendodb/amedhcp/pipeline/hokusai/workflow
+bash bin/build-manifest.sh ../../../lists/batch01.tsv /path/to/zip_list.txt
+bash slurm/submit-packed.sh config/db_packed.env ../../../lists/batch01.tsv batch01
+bash bin/status.sh config/db_packed.env ../../../lists/batch01.tsv
+```
+
 ## Known differences from the DB run
 
-- eddy runs on CPU (`eddy_cpu`, 112 threads); DB used `eddy_cuda11.0`.
+- On HOKUSAI eddy runs on CPU (`eddy_cpu`, 112 threads); the old DB run used `eddy_cuda11.0`; the rebuilt DB uses QuNex `eddy_cuda` (FSL 6.0.7.23).
   Results are close but not bit-identical. HOKUSAI has a `gpu` partition and
   the container has `eddy_cuda` if strict parity is needed.
   `stages/hcp_diffusion_eddy_gpu.sh` is the Rokosan ARM GPU variant and is not
