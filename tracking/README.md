@@ -39,6 +39,7 @@ Rows submitted to a system are marked `已计划` for all three stages, with the
 | 2026-10-28 20:30 (**cancelled 20:40**, none started; rows back to `待处理`) | hokusai chang (ziqing), mpc | `chang_osakau_pt_20261028` | 101 (BMB_OsakaU_PT) | structural 9706723, convert 9706724, preeddy 9706725, eddy 9706726, posteddy 9706727, fmri 9706728, icafix 9706729, msmall 9706730, dedrift 9706731, qc 9706732 |
 | 2026-10-28 20:55 (**cancelled 21:00**, none started; replaced by the node pipeline below) | hokusai chang (ziqing), per-stage arrays | `chang_osakau_pt_20261028b` | 101 (BMB_OsakaU_PT) | structural 9706744, convert 9706745, preeddy 9706746, eddy 9706747 (3 x 35 threads per node), posteddy 9706748, fmri 9706749, icafix 9706750, msmall 9706751, dedrift 9706752, qc 9706753 |
 | 2026-10-28 21:00 | hokusai chang (ziqing), mpc, whole-node pipeline (`slurm/hcp_node_pipeline.sh`, one job = one node running all stages, 106 CPU / 106 GiB budget) | `hokusai_node.env` | 295 (BMB_OsakaU_PT 101 + BMB_TS HARP 194; TS start automatically once uploaded) | 12 node chains, first jobs 9706786–9706797; status: `hcp_node_pipeline.sh status config/hokusai_node.env` |
+| 2026-10-28 21:10 | hokusai wang (haruka74), mpc, whole-node pipeline (same script; container copied from ziqing, sha256 ccef8d7c… checked) | `hokusai_wang_node.env` | 300 (BMB_UHI_PT, uploaded from wu; start automatically once each upload completes) | 12 node chains, first jobs 9706857–9706868; status: `hcp_node_pipeline.sh status config/hokusai_wang_node.env` |
 
 ## What the checkmarks mean
 
