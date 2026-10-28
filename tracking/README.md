@@ -30,6 +30,14 @@ Rationale: a HOKUSAI session costs about 7 mpc node-hours (structural 7 per node
 | Full Stage 2 completion markers observed | 0 |
 | Full Stage 3 completion markers observed | 0 |
 
+## Submissions
+
+Rows submitted to a system are marked `已计划` for all three stages, with the job IDs in `Stage 1 任务/依据`. Do not run them anywhere else.
+
+| Time (JST) | System | Tag | Sessions | Jobs |
+|---|---|---|---:|---|
+| 2026-10-28 20:30 | hokusai chang (ziqing), mpc | `chang_osakau_pt_20261028` | 101 (BMB_OsakaU_PT) | structural 9706723, convert 9706724, preeddy 9706725, eddy 9706726, posteddy 9706727, fmri 9706728, icafix 9706729, msmall 9706730, dedrift 9706731, qc 9706732 |
+
 ## What the checkmarks mean
 
 `☑` in **digital brain upload plan** means the transfer list targets digital brain. It does not mean all three computation stages have been scheduled or completed. All 2,762 sessions are in that transfer list. The transfer process itself was not observed running during this inspection.
