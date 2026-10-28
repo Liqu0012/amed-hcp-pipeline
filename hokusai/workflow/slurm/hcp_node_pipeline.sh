@@ -47,7 +47,7 @@ declare -A DEF=(
   [structural]="5 4 12 21"    [posteddy]="5 5 1 21"     [fmri]="10 10 6 10"
   [icafix]="21 19.5 6 5"      [msmall]="5 3.5 6 21"     [dedrift]="21 19 1 5"
   [qc]="2 1 0.3 26")
-declare -A THR MEMMB SECS MAXC
+declare -A THR MINT MEMMB SECS MAXC
 for st in "${STAGES[@]}"; do
   read -r t m h c <<< "${DEF[$st]}"
   up=${st^^}
@@ -55,6 +55,9 @@ for st in "${STAGES[@]}"; do
   v="HCP_NODE_${up}_MEM_GB";  m="${!v:-$m}"
   v="HCP_NODE_${up}_HOURS";   h="${!v:-$h}"
   v="HCP_NODE_${up}_MAX";     c="${!v:-$c}"
+  # A stage may start with fewer threads (down to MIN_THREADS) when that is all
+  # the CPU budget has left, e.g. eddy next to a node full of structural runs.
+  v="HCP_NODE_${up}_MIN_THREADS"; MINT[$st]="${!v:-$t}"
   THR[$st]=$t; MEMMB[$st]=$(awk -v m="$m" 'BEGIN{printf "%d", m*1024}')
   SECS[$st]=$(awk -v h="$h" 'BEGIN{printf "%d", h*3600}'); MAXC[$st]=$c
 done
@@ -172,7 +175,7 @@ claim() {
   return 1
 }
 
-declare -A INF=() RUN_S=() RUN_ST=() RUNNING=() RUNC=()
+declare -A INF=() RUN_S=() RUN_ST=() RUN_T=() RUNNING=() RUNC=()
 cpu_used=0 mem_used=0
 
 claim_next() {
@@ -200,7 +203,7 @@ stage_ready() {
 }
 
 launch() {
-  local s="$1" st="$2" t="${THR[$2]}" d="$Q/state/$1"
+  local s="$1" st="$2" t="$3" d="$Q/state/$1"
   local scratch="${HCP_SCRATCH_ROOT:-/tmp}/hcp-$SLURM_JOB_ID-$s-$st" rcf="$Q/state/$s/$st.rc.$SLURM_JOB_ID"
   rm -f -- "$rcf"; date -Is > "$d/$st.running"
   (
@@ -222,7 +225,7 @@ launch() {
     exit "$rc"
   ) >> "$Q/logs/$s.$st.log" 2>&1 &
   local pid=$!
-  RUN_S[$pid]=$s; RUN_ST[$pid]=$st; RUNNING[$s/$st]=$pid
+  RUN_S[$pid]=$s; RUN_ST[$pid]=$st; RUN_T[$pid]=$t; RUNNING[$s/$st]=$pid
   RUNC[$st]=$(( ${RUNC[$st]:-0} + 1 ))
   cpu_used=$((cpu_used + t)); mem_used=$((mem_used + MEMMB[$st]))
   log "START $s $st threads=$t (cpu $cpu_used/$CPU_BUDGET mem $((mem_used/1024))/$((MEM_BUDGET_MB/1024))G)"
@@ -234,9 +237,9 @@ reap() {
     s=${RUN_S[$pid]}; st=${RUN_ST[$pid]}; rcf="$Q/state/$s/$st.rc.$SLURM_JOB_ID"
     [[ -s "$rcf" ]] || continue
     wait "$pid" 2>/dev/null; rc=$(cat "$rcf"); rm -f -- "$rcf" "$Q/state/$s/$st.running"
-    unset "RUN_S[$pid]" "RUN_ST[$pid]" "RUNNING[$s/$st]"
     RUNC[$st]=$(( ${RUNC[$st]} - 1 ))
-    cpu_used=$((cpu_used - ${THR[$st]})); mem_used=$((mem_used - MEMMB[$st]))
+    cpu_used=$((cpu_used - ${RUN_T[$pid]})); mem_used=$((mem_used - MEMMB[$st]))
+    unset "RUN_S[$pid]" "RUN_ST[$pid]" "RUN_T[$pid]" "RUNNING[$s/$st]"
     if [[ "$rc" == 0 ]]; then
       printf 'completed=%s\njob=%s\n' "$(date -Is)" "$SLURM_JOB_ID" > "$Q/state/$s/$st.done"
       log "DONE $s $st"
@@ -299,10 +302,13 @@ while :; do
     for s in $(printf '%s\n' "${!INF[@]}" | sort); do
       stage_ready "$s" "$st" || continue
       (( ${RUNC[$st]:-0} < MAXC[$st] )) || break
-      (( cpu_used + THR[$st] <= CPU_BUDGET && mem_used + MEMMB[$st] <= MEM_BUDGET_MB )) || break
+      t=${THR[$st]}; free=$((CPU_BUDGET - cpu_used))
+      (( free < t && free >= MINT[$st] )) && t=$free
+      (( cpu_used + t <= CPU_BUDGET && mem_used + MEMMB[$st] <= MEM_BUDGET_MB )) || break
       (( avail_mb - MEMMB[$st] >= mem_total_mb / 20 )) || break
-      if (( now + SECS[$st] + 600 > end_epoch )); then time_blocked=1; continue; fi
-      launch "$s" "$st"; launched=$((launched + 1)); avail_mb=$((avail_mb - MEMMB[$st]))
+      # Fewer threads take proportionally longer.
+      if (( now + SECS[$st] * THR[$st] / t + 600 > end_epoch )); then time_blocked=1; continue; fi
+      launch "$s" "$st" "$t"; launched=$((launched + 1)); avail_mb=$((avail_mb - MEMMB[$st]))
     done
   done
   stopping=0; [[ -e "$Q/STOP" ]] && stopping=1
