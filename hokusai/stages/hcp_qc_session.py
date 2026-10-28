@@ -122,9 +122,26 @@ def check(study, session):
     else:
         fail.append('aseg.stats missing')
 
+    # Expected outputs come from the conversion parameters (what the selection
+    # said should exist), not from whatever result folders happen to exist.
+    params = os.path.join(root, 'unprocessed', '3T', 'params.sh')
+    expected = None
+    if os.path.isfile(params):
+        with open(params) as f:
+            text = f.read()
+        m_runs = re.search(r'^FMRI_RUNS="([^"]*)"', text, re.M)
+        m_dwi = re.search(r'^DMRI_SHELLS_USABLE="([^"]*)"', text, re.M)
+        expected = {'fmri': m_runs.group(1).split() if m_runs else [],
+                    'dwi': m_dwi.group(1).split() if m_dwi else []}
+        info['expected'] = expected
+    else:
+        info['expected'] = 'params.sh not available; checking outputs that exist'
+
     # ---------------- diffusion ----------------
     eddy_bvals = os.path.join(root, 'Diffusion', 'eddy', 'Pos_Neg.bvals')
-    if os.path.isfile(eddy_bvals):
+    if expected is not None and expected['dwi'] and not os.path.isfile(eddy_bvals):
+        fail.append('diffusion expected (%s) but eddy output missing' % ' '.join(expected['dwi']))
+    elif os.path.isfile(eddy_bvals):
         try:
             vals = numbers(eddy_bvals)
             n = len(vals)
@@ -157,12 +174,9 @@ def check(study, session):
 
     # ---------------- fMRI ----------------
     results = os.path.join(root, 'MNINonLinear', 'Results')
-    params = os.path.join(root, 'unprocessed', '3T', 'params.sh')
     runs = []
-    if os.path.isfile(params):
-        with open(params) as f:
-            m = re.search(r'^FMRI_RUNS="([^"]*)"', f.read(), re.M)
-        runs = m.group(1).split() if m else []
+    if expected is not None:
+        runs = expected['fmri']
     elif os.path.isdir(results):
         runs = sorted(d for d in os.listdir(results)
                       if re.match(r'^(rfMRI_)?REST\d+_(AP|PA)$', d))

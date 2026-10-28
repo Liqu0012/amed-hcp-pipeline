@@ -71,4 +71,4 @@ if [[ ! -s "$prefree_marker" ]]; then
   echo "=== PreFreeSurfer completed: $(date) ==="
 fi
 
-exec "$stage_dir/hcp_structural_session.sh" "$session"
+exec bash "$stage_dir/hcp_structural_session.sh" "$session"

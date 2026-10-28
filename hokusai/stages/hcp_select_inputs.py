@@ -82,6 +82,7 @@ def load(nifti_dir):
             'tokens': set(d.get('ImageType') or []) | set(d.get('ImageTypeText') or []),
             'pe': d.get('PhaseEncodingDirection'), 'ees': d.get('EffectiveEchoSpacing'),
             'dwell': dwell, 'dwell_src': dwell_src,
+            'acq_time': str(d.get('AcquisitionTime') or ''),
             'shape': shape, 'pix': pix, 'vols': shape[3] if len(shape) >= 4 else 1,
             'nbval': nb, 'has_bvec': os.path.exists(base + '.bvec')})
     return out
@@ -143,11 +144,33 @@ def main(nifti_dir, out_path):
             cands.append(s)
         if not cands:
             return None
-        cands.sort(key=lambda s: (0 if 'ND' in s['tokens'] else 1 if 'NORM' in s['tokens'] else 2,
+        # Reconstructions of one acquisition (ND/DIS, NORM/non-NORM) share the
+        # AcquisitionTime. Several distinct times = independent acquisitions,
+        # typically a rescan after motion: use the latest one and flag it,
+        # never the first by series number (which may be the discarded scan).
+        acquisitions = {}
+        for s in cands:
+            acquisitions.setdefault(s['acq_time'] or 'series%d' % s['series'], []).append(s)
+        if len(acquisitions) > 1:
+            def seconds(k):  # dcm2niix writes e.g. 15:01:8.945 (unpadded)
+                try:
+                    h, m, sec = k.split(':')
+                    return int(h) * 3600 + int(m) * 60 + float(sec)
+                except ValueError:
+                    return -1.0
+            latest = max(acquisitions, key=lambda k: (seconds(k), max(s['series'] for s in acquisitions[k])))
+            group = acquisitions[latest]
+            warnings.append('%s: %d independent acquisitions (%s); using the latest (likely rescan) - verify'
+                            % (kind, len(acquisitions),
+                               ', '.join(describe(min(g, key=lambda s: s['series'])) for g in acquisitions.values())))
+        else:
+            group = cands
+        group.sort(key=lambda s: (0 if 'ND' in s['tokens'] else 1 if 'NORM' in s['tokens'] else 2,
                                   s['series']))
-        chosen = cands[0]
-        for s in cands[1:]:
-            exclude(kind, s, 'only one image per contrast is used (kept %s)' % describe(chosen))
+        chosen = group[0]
+        for s in cands:
+            if s is not chosen:
+                exclude(kind, s, 'only one image per contrast is used (kept %s)' % describe(chosen))
         if 'ND' not in chosen['tokens'] and chosen['tokens'] & {'DIS2D', 'DIS3D'}:
             warnings.append('%s %s is scanner distortion-corrected (no ND reconstruction available)'
                             % (kind, describe(chosen)))
