@@ -1573,7 +1573,7 @@ Plan: 2026-10-28 20:10 JST. DB status snapshot: 2026-10-28T19:05:19+09:00 (JST).
 | UHI_Skyraf_HARP_2097_002_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
 | UHI_Skyraf_HARP_2097_003_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
 | UHI_Skyraf_HARP_2097_004_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
-| UHI_Skyraf_HARP_2098_001_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
+| UHI_Skyraf_HARP_2098_001_MR1 | digital brain | 阻塞 | ☐ | ☐ | ☐ | ☑ |
 | UHI_Skyraf_HARP_2099_001_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
 | UHI_Skyraf_HARP_2099_002_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
 | UHI_Skyraf_HARP_2099_003_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
@@ -2446,7 +2446,7 @@ Plan: 2026-10-28 20:10 JST. DB status snapshot: 2026-10-28T19:05:19+09:00 (JST).
 | UKY_Skyra_HARP_3002_001_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
 | UKY_Skyra_HARP_3002_002_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
 | UKY_Skyra_HARP_3003_001_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
-| UKY_Skyra_HARP_3003_002_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
+| UKY_Skyra_HARP_3003_002_MR1 | digital brain | 阻塞 | ☐ | ☐ | ☐ | ☑ |
 | UKY_Skyra_HARP_3004_001_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
 | UKY_Skyra_HARP_3004_002_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
 | UKY_Skyra_HARP_3006_001_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
