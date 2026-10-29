@@ -150,6 +150,13 @@ if [[ "${HCP_NODE_RESUBMIT:-1}" == 1 ]]; then
 fi
 end_epoch="${HCP_NODE_END_EPOCH:-$(date -d "$(squeue -h -j "$SLURM_JOB_ID" -o %e)" +%s 2>/dev/null || echo $(( $(date +%s) + 86400 )))}"
 mem_total_mb=$(awk '/^MemTotal:/ {print int($2/1024)}' /proc/meminfo)
+# Per-stage memory/CPU samples for tuning the budget (bin/node-memprof.sh).
+memprof_pid=""
+if [[ "${HCP_NODE_MEMPROF:-1}" == 1 ]]; then
+  mkdir -p "$Q/memprof"
+  bash "$root/bin/node-memprof.sh" "$Q/memprof/$SLURM_JOB_ID.tsv" 30 > /dev/null 2>&1 &
+  memprof_pid=$!
+fi
 log "start budget=${CPU_BUDGET}cpu/$((MEM_BUDGET_MB/1024))GiB max_sessions=$MAX_SESSIONS end=$(date -d @"$end_epoch" -Is) manifest=$manifest"
 
 upload_ready() {
@@ -335,4 +342,5 @@ done
 log "waiting for ${#RUN_S[@]} running stages"
 while (( ${#RUN_S[@]} > 0 )); do sleep "$POLL"; reap; done
 finalize
+[[ -n "$memprof_pid" ]] && kill "$memprof_pid" 2>/dev/null
 log "worker done"
