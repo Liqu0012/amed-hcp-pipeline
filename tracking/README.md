@@ -45,14 +45,23 @@ Rows submitted to a system are marked `已计划` for all three stages, with the
 
 HOKUSAI home space is not enough for all results (ziqing 1.9 TB free for 295 sessions, haruka74 1.6 TB for 300; about 13-14 GB per finished session). A loop on wu (`~/harp_recompute_index_20261028/pull_hokusai_results.sh`, started with `start_pull.sh`, every 30 min) copies each session whose node-pipeline state is `DONE` to `wu:/mnt/data/amed_hcp/hokusai_v6_20261028/output/<session>/` (with its node-pipeline logs and state under `hcp_node_pipeline/`), verifies it by checksum, and only then deletes the HOKUSAI study directory and writes `state/<session>/PULLED`. Failed and blocked sessions stay on HOKUSAI. Raw zips are kept. Record: `pull_state/pulled.tsv` on wu.
 
-Sessions that stopped on input data, not on the pipeline (left as they are, not rerun):
+Results on wu are now pulled to `wu:/mnt/data/HCP/amed_hcp_v6_hokusai/<session>/` (4 sessions in parallel per HOKUSAI account).
 
-| Session | System | Stage | Reason |
-|---|---|---|---|
-| `UOS_Prisma_HARP_0054_001_MR1` | hokusai chang | convert (BLOCKED) | no usable T2w image (HCPStyleData requires T2w) |
-| `UHI_Skyraf_HARP_6210_001_MR1` | hokusai wang | convert (BLOCKED) | no usable T2w image |
-| `UHI_Skyraf_HARP_6127_001_MR1` | hokusai wang | convert (FAILED rc=8) | a truncated DICOM in series 11 (`File not large enough to store image data`); dcm2niix converted 1720 of 2095 files. The zip matches wu by checksum, so the source itself is damaged |
-| `UHI_Skyraf_HARP_6151_001_MR1` | hokusai wang | structural (FAILED) | FreeSurfer Talairach failure detection (`talairach_afd` p=0.0049 < 0.005) |
+### Problem sessions (checked 2026-10-29 15:50 JST)
+
+Checked: the convert and structural logs of every session started so far, 181 on hokusai chang, 153 on hokusai wang and 672 on digital brain, for a missing or unusable T1w/T2w, truncated DICOM files, and FreeSurfer Talairach failures. Seven sessions stopped. They are marked `阻塞` (input data cannot be used as is) or `失败` (a stage failed) in the Excel/CSV tracker, with the details in `备注`. None has been rerun or had its parameters changed; each needs a decision.
+
+| Session | System | Status | Problem | Suggested action |
+|---|---|---|---|---|
+| `UOS_Prisma_HARP_0054_001_MR1` | hokusai chang | 阻塞 (convert) | No T2w in the raw data (and no DWI): only T1_MPR, BOLD_REST1 and scouts | Record as missing data |
+| `JTD_Prisma_HARP_1674_001_MR1` | digital brain | 阻塞 (convert) | No 3D T1w or T2w: only 2D t1_tse/t2_tse/FLAIR, MRA, and a DERIVED DWI; no rfMRI | Record as missing data |
+| `UHI_Skyraf_HARP_6210_001_MR1` | hokusai wang | 阻塞 (convert) | T2_SPC_13 is 0.8×0.8×1.6 mm (212 slices). The input selector requires near-isotropic voxels (longest edge ≤ 1.5 × shortest), so it reports "no usable T2w" | Decide whether this T2w may be used (selector rule change; preprocessing-parameter issue) |
+| `UHI_Skyraf_HARP_6127_001_MR1` | hokusai wang | 失败 (convert, rc=8) | One truncated DICOM in series 11 = BOLD_REST1_PA (375 volumes): `File not large enough to store image data`, 1720 of 2095 files converted. The zip matches wu byte for byte, so the source itself is damaged. T1w/T2w are fine | Run without the REST1_PA run, or exclude the session |
+| `JTD_Prisma_HARP_1220_001_MR1` | digital brain | 失败 (convert, rc=8) | One truncated DICOM in series 24 (after BOLD_REST1_AP_23, the SBRef, so probably the REST1_AP run), 640 of 642 files converted. Its T1_MPR/T2_SPC are 320×320×146, unlike other JTD sessions | Confirm the damaged series, then drop that run or exclude the session |
+| `UHI_Skyraf_HARP_6151_001_MR1` | hokusai wang | 失败 (structural) | FreeSurfer Talairach failure detection: `talairach_afd` p=0.0049 < 0.005 | Check T1w quality; if it looks normal, rerun with `-notal-check`, otherwise mark QC-failed |
+| `JTD_Prisma_HARP_1125_002_MR1` | digital brain | 失败 (structural) | recon-all stopped after the parallel curvature step with `Cannot find rh.white.H`. This is a FreeSurfer 6 parallel-step file problem, not a data problem | Rerun once |
+
+No other session has these problems: on HOKUSAI every other session has a T2w with 224 slices (`UHI_Skyraf_HARP_6220_001_MR1` has 223 slices at isotropic resolution, was accepted, and is running), there is no other truncated DICOM, and no other Talairach warning; on DB there is no other `PROBLEM`, truncated DICOM or Talairach failure.
 
 ## What the checkmarks mean
 

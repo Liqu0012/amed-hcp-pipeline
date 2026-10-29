@@ -127,7 +127,7 @@ Plan: 2026-10-28 20:10 JST. DB status snapshot: 2026-10-28T19:05:19+09:00 (JST).
 | JTD_Prisma_HARP_1123_003_MR1 | digital brain | 运行中 | ☐ | ☐ | ☐ | ☑ |
 | JTD_Prisma_HARP_1124_001_MR1 | digital brain | 运行中 | ☐ | ☐ | ☐ | ☑ |
 | JTD_Prisma_HARP_1125_001_MR1 | digital brain | 运行中 | ☐ | ☐ | ☐ | ☑ |
-| JTD_Prisma_HARP_1125_002_MR1 | digital brain | 运行中 | ☐ | ☐ | ☐ | ☑ |
+| JTD_Prisma_HARP_1125_002_MR1 | digital brain | 失败 | ☐ | ☐ | ☐ | ☑ |
 | JTD_Prisma_HARP_1126_001_MR1 | digital brain | 运行中 | ☐ | ☐ | ☐ | ☑ |
 | JTD_Prisma_HARP_1127_003_MR1 | digital brain | 运行中 | ☐ | ☐ | ☐ | ☑ |
 | JTD_Prisma_HARP_1133_001_MR1 | digital brain | 运行中 | ☐ | ☐ | ☐ | ☑ |
@@ -177,7 +177,7 @@ Plan: 2026-10-28 20:10 JST. DB status snapshot: 2026-10-28T19:05:19+09:00 (JST).
 | JTD_Prisma_HARP_1210_002_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
 | JTD_Prisma_HARP_1217_001_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
 | JTD_Prisma_HARP_1219_001_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
-| JTD_Prisma_HARP_1220_001_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
+| JTD_Prisma_HARP_1220_001_MR1 | digital brain | 失败 | ☐ | ☐ | ☐ | ☑ |
 | JTD_Prisma_HARP_1221_001_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
 | JTD_Prisma_HARP_1222_001_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
 | JTD_Prisma_HARP_1223_001_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
@@ -474,7 +474,7 @@ Plan: 2026-10-28 20:10 JST. DB status snapshot: 2026-10-28T19:05:19+09:00 (JST).
 | JTD_Prisma_HARP_1671_001_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
 | JTD_Prisma_HARP_1672_001_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
 | JTD_Prisma_HARP_1673_001_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
-| JTD_Prisma_HARP_1674_001_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
+| JTD_Prisma_HARP_1674_001_MR1 | digital brain | 阻塞 | ☐ | ☐ | ☐ | ☑ |
 | JTD_Prisma_HARP_1675_001_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
 | JTD_Prisma_HARP_1675_002_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
 | JTD_Prisma_HARP_1678_001_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
@@ -2216,7 +2216,7 @@ Plan: 2026-10-28 20:10 JST. DB status snapshot: 2026-10-28T19:05:19+09:00 (JST).
 | UHI_Skyraf_HARP_6122_001_MR1 | hokusai wang | 已计划 | ☐ | ☐ | ☐ | ☐ |
 | UHI_Skyraf_HARP_6123_001_MR1 | hokusai wang | 已计划 | ☐ | ☐ | ☐ | ☐ |
 | UHI_Skyraf_HARP_6124_001_MR1 | hokusai wang | 已计划 | ☐ | ☐ | ☐ | ☐ |
-| UHI_Skyraf_HARP_6127_001_MR1 | hokusai wang | 已计划 | ☐ | ☐ | ☐ | ☐ |
+| UHI_Skyraf_HARP_6127_001_MR1 | hokusai wang | 失败 | ☐ | ☐ | ☐ | ☐ |
 | UHI_Skyraf_HARP_6128_001_MR1 | hokusai wang | 已计划 | ☐ | ☐ | ☐ | ☐ |
 | UHI_Skyraf_HARP_6129_001_MR1 | hokusai wang | 已计划 | ☐ | ☐ | ☐ | ☐ |
 | UHI_Skyraf_HARP_6129_002_MR1 | hokusai wang | 已计划 | ☐ | ☐ | ☐ | ☐ |
@@ -2234,7 +2234,7 @@ Plan: 2026-10-28 20:10 JST. DB status snapshot: 2026-10-28T19:05:19+09:00 (JST).
 | UHI_Skyraf_HARP_6141_001_MR1 | hokusai wang | 已计划 | ☐ | ☐ | ☐ | ☐ |
 | UHI_Skyraf_HARP_6143_001_MR1 | hokusai wang | 已计划 | ☐ | ☐ | ☐ | ☐ |
 | UHI_Skyraf_HARP_6146_001_MR1 | hokusai wang | 已计划 | ☐ | ☐ | ☐ | ☐ |
-| UHI_Skyraf_HARP_6151_001_MR1 | hokusai wang | 已计划 | ☐ | ☐ | ☐ | ☐ |
+| UHI_Skyraf_HARP_6151_001_MR1 | hokusai wang | 失败 | ☐ | ☐ | ☐ | ☐ |
 | UHI_Skyraf_HARP_6152_001_MR1 | hokusai wang | 已计划 | ☐ | ☐ | ☐ | ☐ |
 | UHI_Skyraf_HARP_6153_001_MR1 | hokusai wang | 已计划 | ☐ | ☐ | ☐ | ☐ |
 | UHI_Skyraf_HARP_6201_001_MR1 | hokusai wang | 已计划 | ☐ | ☐ | ☐ | ☐ |
@@ -2243,7 +2243,7 @@ Plan: 2026-10-28 20:10 JST. DB status snapshot: 2026-10-28T19:05:19+09:00 (JST).
 | UHI_Skyraf_HARP_6204_002_MR1 | hokusai wang | 已计划 | ☐ | ☐ | ☐ | ☐ |
 | UHI_Skyraf_HARP_6205_001_MR1 | hokusai wang | 已计划 | ☐ | ☐ | ☐ | ☐ |
 | UHI_Skyraf_HARP_6208_001_MR1 | hokusai wang | 已计划 | ☐ | ☐ | ☐ | ☐ |
-| UHI_Skyraf_HARP_6210_001_MR1 | hokusai wang | 已计划 | ☐ | ☐ | ☐ | ☐ |
+| UHI_Skyraf_HARP_6210_001_MR1 | hokusai wang | 阻塞 | ☐ | ☐ | ☐ | ☐ |
 | UHI_Skyraf_HARP_6211_001_MR1 | hokusai wang | 已计划 | ☐ | ☐ | ☐ | ☐ |
 | UHI_Skyraf_HARP_6212_001_MR1 | hokusai wang | 已计划 | ☐ | ☐ | ☐ | ☐ |
 | UHI_Skyraf_HARP_6213_001_MR1 | hokusai wang | 已计划 | ☐ | ☐ | ☐ | ☐ |
@@ -2578,7 +2578,7 @@ Plan: 2026-10-28 20:10 JST. DB status snapshot: 2026-10-28T19:05:19+09:00 (JST).
 | UOS_Prisma_HARP_0051_001_MR1 | hokusai chang | 已计划 | ☐ | ☐ | ☐ | ☐ |
 | UOS_Prisma_HARP_0052_001_MR1 | hokusai chang | 已计划 | ☐ | ☐ | ☐ | ☐ |
 | UOS_Prisma_HARP_0053_001_MR1 | hokusai chang | 已计划 | ☐ | ☐ | ☐ | ☐ |
-| UOS_Prisma_HARP_0054_001_MR1 | hokusai chang | 已计划 | ☐ | ☐ | ☐ | ☐ |
+| UOS_Prisma_HARP_0054_001_MR1 | hokusai chang | 阻塞 | ☐ | ☐ | ☐ | ☐ |
 | UOS_Prisma_HARP_0055_001_MR1 | hokusai chang | 已计划 | ☐ | ☐ | ☐ | ☐ |
 | UOS_Prisma_HARP_0056_001_MR1 | hokusai chang | 已计划 | ☐ | ☐ | ☐ | ☐ |
 | UOS_Prisma_HARP_0057_001_MR1 | hokusai chang | 已计划 | ☐ | ☐ | ☐ | ☐ |
