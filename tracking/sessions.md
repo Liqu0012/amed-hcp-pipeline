@@ -1553,14 +1553,14 @@ Plan: 2026-10-28 20:10 JST. DB status snapshot: 2026-10-28T19:05:19+09:00 (JST).
 | UHI_Skyraf_HARP_2086_002_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
 | UHI_Skyraf_HARP_2086_003_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
 | UHI_Skyraf_HARP_2087_001_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
-| UHI_Skyraf_HARP_2088_001_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
+| UHI_Skyraf_HARP_2088_001_MR1 | digital brain | 失败 | ☐ | ☐ | ☐ | ☑ |
 | UHI_Skyraf_HARP_2088_002_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
 | UHI_Skyraf_HARP_2089_001_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
 | UHI_Skyraf_HARP_2090_001_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
 | UHI_Skyraf_HARP_2091_001_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
 | UHI_Skyraf_HARP_2091_002_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
 | UHI_Skyraf_HARP_2091_003_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
-| UHI_Skyraf_HARP_2091_004_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
+| UHI_Skyraf_HARP_2091_004_MR1 | digital brain | 失败 | ☐ | ☐ | ☐ | ☑ |
 | UHI_Skyraf_HARP_2092_001_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
 | UHI_Skyraf_HARP_2093_001_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
 | UHI_Skyraf_HARP_2094_001_MR1 | digital brain | 已计划 | ☐ | ☐ | ☐ | ☑ |
