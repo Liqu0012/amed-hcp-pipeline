@@ -41,6 +41,19 @@ Rows submitted to a system are marked `已计划` for all three stages, with the
 | 2026-10-28 21:00 | hokusai chang (ziqing), mpc, whole-node pipeline (`slurm/hcp_node_pipeline.sh`, one job = one node running all stages, 106 CPU / 106 GiB budget) | `hokusai_node.env` | 295 (BMB_OsakaU_PT 101 + BMB_TS HARP 194; TS start automatically once uploaded) | 12 node chains, first jobs 9706786–9706797; status: `hcp_node_pipeline.sh status config/hokusai_node.env` |
 | 2026-10-28 21:10 | hokusai wang (haruka74), mpc, whole-node pipeline (same script; container copied from ziqing, sha256 ccef8d7c… checked) | `hokusai_wang_node.env` | 300 (BMB_UHI_PT, uploaded from wu; start automatically once each upload completes) | 12 node chains, first jobs 9706857–9706868; status: `hcp_node_pipeline.sh status config/hokusai_wang_node.env` |
 
+### HOKUSAI results and problem sessions (2026-10-29 12:50 JST)
+
+HOKUSAI home space is not enough for all results (ziqing 1.9 TB free for 295 sessions, haruka74 1.6 TB for 300; about 13-14 GB per finished session). A loop on wu (`~/harp_recompute_index_20261028/pull_hokusai_results.sh`, started with `start_pull.sh`, every 30 min) copies each session whose node-pipeline state is `DONE` to `wu:/mnt/data/amed_hcp/hokusai_v6_20261028/output/<session>/` (with its node-pipeline logs and state under `hcp_node_pipeline/`), verifies it by checksum, and only then deletes the HOKUSAI study directory and writes `state/<session>/PULLED`. Failed and blocked sessions stay on HOKUSAI. Raw zips are kept. Record: `pull_state/pulled.tsv` on wu.
+
+Sessions that stopped on input data, not on the pipeline (left as they are, not rerun):
+
+| Session | System | Stage | Reason |
+|---|---|---|---|
+| `UOS_Prisma_HARP_0054_001_MR1` | hokusai chang | convert (BLOCKED) | no usable T2w image (HCPStyleData requires T2w) |
+| `UHI_Skyraf_HARP_6210_001_MR1` | hokusai wang | convert (BLOCKED) | no usable T2w image |
+| `UHI_Skyraf_HARP_6127_001_MR1` | hokusai wang | convert (FAILED rc=8) | a truncated DICOM in series 11 (`File not large enough to store image data`); dcm2niix converted 1720 of 2095 files. The zip matches wu by checksum, so the source itself is damaged |
+| `UHI_Skyraf_HARP_6151_001_MR1` | hokusai wang | structural (FAILED) | FreeSurfer Talairach failure detection (`talairach_afd` p=0.0049 < 0.005) |
+
 ## What the checkmarks mean
 
 `☑` in **digital brain upload plan** means the transfer list targets digital brain. It does not mean all three computation stages have been scheduled or completed. All 2,762 sessions are in that transfer list. The transfer process itself was not observed running during this inspection.
