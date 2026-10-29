@@ -73,6 +73,29 @@ DISK_MIN_FREE_GB="${HCP_NODE_DISK_MIN_FREE_GB:-400}"
 declare -A DISKGB=([convert]=6 [preeddy]=2 [eddy]=3 [structural]=3 [posteddy]=2
   [fmri]=25 [icafix]=15 [msmall]=5 [dedrift]=5 [qc]=0)
 for st in "${!DISKGB[@]}"; do v="HCP_NODE_${st^^}_DISK_GB"; DISKGB[$st]="${!v:-${DISKGB[$st]}}"; done
+# Study directories in /lustre/tmp_work (HCP_NODE_STUDY_TMP): a new session gets
+# its directory there with a symlink in HCP_STUDY. tmp_work deletes files not
+# modified for 7 days, so a session whose oldest file is older than
+# HCP_NODE_TMP_MAX_AGE_DAYS (6) when it is (re)claimed is cleared and computed
+# again from the start instead of continuing with files that may be gone.
+STUDY_TMP="${HCP_NODE_STUDY_TMP:-}"
+TMP_MAX_AGE_DAYS="${HCP_NODE_TMP_MAX_AGE_DAYS:-6}"
+place_study() {
+  local s=$1
+  [[ -n "$STUDY_TMP" && ! -e "$HCP_STUDY/$s" && ! -L "$HCP_STUDY/$s" ]] || return 0
+  mkdir -p "$STUDY_TMP/$s" && ln -s "$STUDY_TMP/$s" "$HCP_STUDY/$s" && log "STUDY $s -> $STUDY_TMP/$s"
+}
+guard_tmp_age() {
+  local s=$1 d="$HCP_STUDY/$1" r st
+  [[ -L "$d" ]] || return 0
+  r=$(readlink -f -- "$d")
+  [[ "$r" == /lustre/tmp_work/* ]] || return 0
+  if [[ ! -d "$r" ]] || [[ -n "$(find "$r" -type f ! -newermt "$TMP_MAX_AGE_DAYS days ago" -print -quit 2>/dev/null)" ]]; then
+    log "RESET $s: tmp_work files older than $TMP_MAX_AGE_DAYS days (or gone); computing again from the start"
+    rm -rf -- "$r"; mkdir -p "$r"
+    for st in "${STAGES[@]}"; do rm -f -- "$Q/state/$s/$st.done" "$Q/state/$s/$st.failed"; done
+  fi
+}
 disk_free_gb() { [[ -n "${HCP_NODE_TEST_DISK_FREE_GB:-}" ]] && { echo "$HCP_NODE_TEST_DISK_FREE_GB"; return; }; df -P -BG "$HCP_STUDY" 2>/dev/null | awk 'NR==2 {sub(/G$/,"",$4); print $4+0}'; }
 POLL="${HCP_NODE_POLL_SEC:-30}"
 
@@ -207,6 +230,7 @@ claim_next() {
       rm -rf -- "$Q/claims/$s"; log "not ready (zip test failed) $s"; continue
     fi
     mkdir -p "$Q/state/$s"; INF[$s]=1; log "CLAIM $s (${#INF[@]} in progress)"
+    guard_tmp_age "$s"; place_study "$s"
     return 0
   done
   return 1
@@ -306,7 +330,7 @@ for s in "${SESSIONS[@]}"; do
   (( ${#INF[@]} < MAX_SESSIONS )) || break
   # Stages left running by a killed job have no .done: they run again.
   rm -f -- "$Q/state/$s/"*.running "$Q/state/$s/"*.rc.* 2>/dev/null
-  claim "$s" && { mkdir -p "$Q/state/$s"; INF[$s]=1; log "RESUME $s"; }
+  claim "$s" && { mkdir -p "$Q/state/$s"; INF[$s]=1; log "RESUME $s"; guard_tmp_age "$s"; place_study "$s"; }
 done
 
 while :; do
