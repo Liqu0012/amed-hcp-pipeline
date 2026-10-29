@@ -65,6 +65,15 @@ CPU_BUDGET="${HCP_NODE_CPU_BUDGET:-106}"
 MEM_BUDGET_MB=$(awk -v g="${HCP_NODE_MEM_BUDGET_GB:-106}" 'BEGIN{printf "%d", g*1024}')
 MAX_SESSIONS="${HCP_NODE_MAX_SESSIONS:-15}"
 MIN_AGE="${HCP_UPLOAD_MIN_AGE_MIN:-30}"
+# Disk guard: a stage starts only if the study file system keeps MIN_FREE_GB
+# free after the growth expected from the stages already started by this job
+# and from this stage (HCP_NODE_<STAGE>_DISK_GB). Several nodes share one quota,
+# so the reserve should cover what the other nodes may still write.
+DISK_MIN_FREE_GB="${HCP_NODE_DISK_MIN_FREE_GB:-400}"
+declare -A DISKGB=([convert]=6 [preeddy]=2 [eddy]=3 [structural]=3 [posteddy]=2
+  [fmri]=25 [icafix]=15 [msmall]=5 [dedrift]=5 [qc]=0)
+for st in "${!DISKGB[@]}"; do v="HCP_NODE_${st^^}_DISK_GB"; DISKGB[$st]="${!v:-${DISKGB[$st]}}"; done
+disk_free_gb() { [[ -n "${HCP_NODE_TEST_DISK_FREE_GB:-}" ]] && { echo "$HCP_NODE_TEST_DISK_FREE_GB"; return; }; df -P -BG "$HCP_STUDY" 2>/dev/null | awk 'NR==2 {sub(/G$/,"",$4); print $4+0}'; }
 POLL="${HCP_NODE_POLL_SEC:-30}"
 
 declare -A ARCH=()
@@ -183,7 +192,7 @@ claim() {
 }
 
 declare -A INF=() RUN_S=() RUN_ST=() RUN_T=() RUNNING=() RUNC=()
-cpu_used=0 mem_used=0
+cpu_used=0 mem_used=0 disk_pending=0
 
 claim_next() {
   local s
@@ -191,9 +200,10 @@ claim_next() {
     [[ -n "${INF[$s]:-}" ]] && continue
     terminal "$s" && continue
     [[ -d "$Q/claims/$s" ]] && claim_owner_alive "$s" && continue
-    [[ -s "${ARCH[$s]}" && -n "$(find "${ARCH[$s]}" -maxdepth 0 -mmin +"$MIN_AGE" 2>/dev/null)" ]] || continue
+    converted=0; [[ -e "$Q/state/$s/convert.done" ]] && converted=1
+    (( converted )) || [[ -s "${ARCH[$s]}" && -n "$(find "${ARCH[$s]}" -maxdepth 0 -mmin +"$MIN_AGE" 2>/dev/null)" ]] || continue
     claim "$s" || continue
-    if ! upload_ready "${ARCH[$s]}" "$s"; then
+    if (( !converted )) && ! upload_ready "${ARCH[$s]}" "$s"; then
       rm -rf -- "$Q/claims/$s"; log "not ready (zip test failed) $s"; continue
     fi
     mkdir -p "$Q/state/$s"; INF[$s]=1; log "CLAIM $s (${#INF[@]} in progress)"
@@ -234,7 +244,7 @@ launch() {
   local pid=$!
   RUN_S[$pid]=$s; RUN_ST[$pid]=$st; RUN_T[$pid]=$t; RUNNING[$s/$st]=$pid
   RUNC[$st]=$(( ${RUNC[$st]:-0} + 1 ))
-  cpu_used=$((cpu_used + t)); mem_used=$((mem_used + MEMMB[$st]))
+  cpu_used=$((cpu_used + t)); mem_used=$((mem_used + MEMMB[$st])); disk_pending=$((disk_pending + DISKGB[$st]))
   log "START $s $st threads=$t (cpu $cpu_used/$CPU_BUDGET mem $((mem_used/1024))/$((MEM_BUDGET_MB/1024))G)"
 }
 
@@ -245,7 +255,7 @@ reap() {
     [[ -s "$rcf" ]] || continue
     wait "$pid" 2>/dev/null; rc=$(cat "$rcf"); rm -f -- "$rcf" "$Q/state/$s/$st.running"
     RUNC[$st]=$(( ${RUNC[$st]} - 1 ))
-    cpu_used=$((cpu_used - ${RUN_T[$pid]})); mem_used=$((mem_used - MEMMB[$st]))
+    cpu_used=$((cpu_used - ${RUN_T[$pid]})); mem_used=$((mem_used - MEMMB[$st])); disk_pending=$((disk_pending - DISKGB[$st]))
     unset "RUN_S[$pid]" "RUN_ST[$pid]" "RUN_T[$pid]" "RUNNING[$s/$st]"
     if [[ "$rc" == 0 ]]; then
       printf 'completed=%s\njob=%s\n' "$(date -Is)" "$SLURM_JOB_ID" > "$Q/state/$s/$st.done"
@@ -303,7 +313,8 @@ while :; do
   reap
   finalize
   now=$(date +%s)
-  launched=0 time_blocked=0
+  launched=0 time_blocked=0 disk_blocked=0
+  disk_left=$(( $(disk_free_gb || echo 0) - DISK_MIN_FREE_GB - disk_pending ))
   avail_mb=$(awk '/^MemAvailable:/ {a=$2} /^MemFree:/ {f=$2} END {print int((a ? a : f)/1024)}' /proc/meminfo)
   for st in "${STAGES[@]}"; do
     for s in $(printf '%s\n' "${!INF[@]}" | sort); do
@@ -313,14 +324,15 @@ while :; do
       (( free < t && free >= MINT[$st] )) && t=$free
       (( cpu_used + t <= CPU_BUDGET && mem_used + MEMMB[$st] <= MEM_BUDGET_MB )) || break
       (( avail_mb - MEMMB[$st] >= mem_total_mb / 20 )) || break
+      if (( DISKGB[$st] > disk_left )); then disk_blocked=1; continue; fi
       # Fewer threads take proportionally longer.
       if (( now + SECS[$st] * THR[$st] / t + 600 > end_epoch )); then time_blocked=1; continue; fi
-      launch "$s" "$st" "$t"; launched=$((launched + 1)); avail_mb=$((avail_mb - MEMMB[$st]))
+      launch "$s" "$st" "$t"; launched=$((launched + 1)); disk_left=$((disk_left - DISKGB[$st])); avail_mb=$((avail_mb - MEMMB[$st]))
     done
   done
   stopping=0; [[ -e "$Q/STOP" ]] && stopping=1
   admitted=0
-  if (( !stopping && now + SECS[structural] + 600 <= end_epoch )); then
+  if (( !stopping && !disk_blocked && disk_left > 60 && now + SECS[structural] + 600 <= end_epoch )); then
     if (( ${#INF[@]} < MAX_SESSIONS )) || (( launched == 0 && cpu_used * 2 < CPU_BUDGET && ${#INF[@]} < 2 * MAX_SESSIONS )); then
       claim_next && admitted=1
     fi
@@ -334,8 +346,17 @@ while :; do
       break
     fi
     (( time_blocked || stopping )) && { log "remaining work does not fit in this job; successor continues"; break; }
+    if (( disk_blocked )); then
+      # Nothing runs here and the disk is full: wait for results to be pulled
+      # off HOKUSAI, but do not hold an idle node for more than DISK_WAIT_MIN.
+      disk_wait_since=${disk_wait_since:-$now}
+      if (( now - disk_wait_since > ${HCP_NODE_DISK_WAIT_MIN:-60} * 60 )); then
+        log "not enough disk for $(( ${HCP_NODE_DISK_WAIT_MIN:-60} )) min with nothing running; successor continues"; break
+      fi
+    fi
     (( ${#INF[@]} == 0 )) && { log "no session could be started (uploads in progress or not enough wall time); successor continues"; break; }
   fi
+  (( disk_blocked && ${#RUN_S[@]} == 0 )) || disk_wait_since=
   sleep "$POLL"
 done
 
