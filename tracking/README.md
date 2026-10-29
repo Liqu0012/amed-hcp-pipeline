@@ -80,6 +80,22 @@ The NIfTI headers of the inputs actually used by all 1,006 started sessions (672
 
 No other session has these problems: on HOKUSAI every other session has a T2w with 224 slices (`UHI_Skyraf_HARP_6220_001_MR1` has 223 slices at isotropic resolution, was accepted, and is running), there is no other truncated DICOM, and no other Talairach warning; on DB there is no other `PROBLEM`, truncated DICOM or Talairach failure.
 
+### Audit and fixes 2026-10-30 (03:40 JST)
+
+- **Parameters** checked on the sidecars of 1,145 sessions (DB, ziqing, haruka74, wu): phase-encoding directions and echo-spacing units are right everywhere; SE and BOLD echo spacing are equal (0.00063 s) at every site; every chosen T1w/T2w is 0.8 mm ND+NORM; no FLAIR, phase image or wrong SBRef was selected. UKY (47) and ATR (42) sessions without dMRI have no DWI in the raw data.
+- **TOPUP** checked on 1,342 corrections (DB stage 1, haruka74): the correlation of the two phase-encoding images inside the brain goes from 0.37–0.64 to a median of 0.885–0.952 after correction (lowest 0.81); fields about −75/+100 Hz. No correction failed. DWI AP/PA are concatenated, not averaged (`--combine-data-flag=2`), on purpose: AP and PA have different gradient directions (median 57° apart in UOS_0089).
+- **Needs a visual check**: `UHI_Skyraf_HARP_5337_002_MR1` (TOPUP fine, but field about ±170 Hz and EPI→T1w BBR cost 0.85 / 0.62 for REST1_AP / PA, normal < 0.5; possible metal artefact). `UHI_Skyraf_HARP_6201_001_MR1` has a large field (+210 Hz) but corrects well.
+- **Versions**: the QuNex container has HCP Pipelines v6.0.0-rc.1 (b79d9fb), FreeSurfer 6.0.0, FSL 6.0.7.23. rc.1 differs from v6.0.0 only in FreeSurfer 8 symlinks, so results are the same. The earlier DB container (the 1,083 accepted sessions) had v6.0.0 with FreeSurfer 6.0.1.
+- **Gradient non-linearity correction**: not applied anywhere (`--gdcoeffs=NONE`). No Siemens `coeff*.grad` file was found on wu, DB, HOKUSAI or rokosan.
+- **Scheduler fixes** (pipeline commit ed8aada, deployed to ziqing, haruka74 and DB; queued jobs run them through the config re-exec hooks):
+  - an squeue error no longer counts as "job dead", so live sessions are not taken over;
+  - claim takeover is locked, so two jobs cannot both win;
+  - tmp_work age is taken from `convert.done`. Sessions older than 5 days are copied home; any still in tmp_work after 6.5 days get `FAILED tmp_work_expiry`. The deadline for the current batch is about 2026-11-05 01:50;
+  - DONE records the file count, and the wu pull checks it;
+  - converted sessions no longer need their zip;
+  - the tmp_work migrators were stopped (`MIGRATE_STOP`); every in-progress session is already in tmp_work.
+- **digital brain stage 2**: the L40S job 24206 started at about 01:11.
+
 ### Status 2026-10-29 22:10 JST
 
 - **digital brain stage 1**: 666 complete, 4 failed (1125_002, 1220 and the two new UHI sessions 2088_001 and 2091_004, both truncated BOLD DICOMs in the source zip), 1 blocked, about 76 running on 5 nodes. The 680 uploads from wu finished at 19:54 (680/680 verified).
