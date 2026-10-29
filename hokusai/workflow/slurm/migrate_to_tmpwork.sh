@@ -14,10 +14,12 @@
 #     the copy is discarded and the session is tried again later.
 # Files moved into tmp_work are counted there, not in the home quota.
 #
-# Usage: migrate_to_tmpwork.sh STUDY_DIR QUEUE_DIR TMP_STUDY_DIR [INTERVAL_SEC]
+# Usage: migrate_to_tmpwork.sh STUDY_DIR QUEUE_DIR TMP_STUDY_DIR [INTERVAL_SEC [SHARDS SHARD]]
+# Several instances can run side by side with SHARDS=N and SHARD=0..N-1: each
+# handles only the sessions whose name hashes to its shard.
 # Stop:  touch QUEUE_DIR/MIGRATE_STOP
 set -u
-study=$1 q=$2 tmp=$3 iv=${4:-60}
+study=$1 q=$2 tmp=$3 iv=${4:-60} shards=${5:-1} shard=${6:-0}
 log() { printf '[%s] %s\n' "$(date '+%F %T')" "$*"; }
 busy() { compgen -G "$q/state/$1/*.running" > /dev/null; }
 mkdir -p "$tmp"
@@ -64,10 +66,15 @@ except OSError:
 
 while :; do
   [[ -e "$q/MIGRATE_STOP" ]] && { log "MIGRATE_STOP present; exiting"; break; }
-  for c in "$q"/claims/*/; do
+  # Largest first: sessions past fMRI (~36 GB) before earlier ones.
+  for s in $(for c in "$q"/claims/*/; do
+               [[ -d "$c" ]] || continue; s=$(basename "$c")
+               (( $(printf '%s' "$s" | cksum | cut -d' ' -f1) % shards == shard )) || continue
+               n=$(ls "$q/state/$s" 2>/dev/null | grep -c '\.done$'); [[ -e "$q/state/$s/fmri.done" ]] && n=$((n + 20))
+               echo "$n $s"
+             done | sort -rn | cut -d' ' -f2); do
     [[ -e "$q/MIGRATE_STOP" ]] && break
-    [[ -d "$c" ]] || continue
-    s=$(basename "$c"); d="$study/$s"
+    d="$study/$s"
     [[ "$s" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || continue
     [[ -d "$d" && ! -L "$d" ]] || continue
     busy "$s" && continue
