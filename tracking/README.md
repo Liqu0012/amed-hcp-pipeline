@@ -39,6 +39,8 @@ Rows submitted to a system are marked `已计划` for all three stages, with the
 | 2026-10-28 20:30 (**cancelled 20:40**, none started; rows back to `待处理`) | hokusai chang (ziqing), mpc | `chang_osakau_pt_20261028` | 101 (BMB_OsakaU_PT) | structural 9706723, convert 9706724, preeddy 9706725, eddy 9706726, posteddy 9706727, fmri 9706728, icafix 9706729, msmall 9706730, dedrift 9706731, qc 9706732 |
 | 2026-10-28 20:55 (**cancelled 21:00**, none started; replaced by the node pipeline below) | hokusai chang (ziqing), per-stage arrays | `chang_osakau_pt_20261028b` | 101 (BMB_OsakaU_PT) | structural 9706744, convert 9706745, preeddy 9706746, eddy 9706747 (3 x 35 threads per node), posteddy 9706748, fmri 9706749, icafix 9706750, msmall 9706751, dedrift 9706752, qc 9706753 |
 | 2026-10-28 21:00 | hokusai chang (ziqing), mpc, whole-node pipeline (`slurm/hcp_node_pipeline.sh`, one job = one node running all stages, 106 CPU / 106 GiB budget) | `hokusai_node.env` | 295 (BMB_OsakaU_PT 101 + BMB_TS HARP 194; TS start automatically once uploaded) | 12 node chains, first jobs 9706786–9706797; status: `hcp_node_pipeline.sh status config/hokusai_node.env` |
+| 2026-10-29 17:55 | digital brain, stage 2 GPU (4× H100, gcalc2) | `db_stage2.env` | rolling: every DB session with `.stage1_complete` (614 now) | `hcp_stage2` 24205 (queued) |
+| 2026-10-29 17:53 | digital brain, stage 1 extended scope (5 nodes) | `db_stage1.env` | rolling: all DB-assigned sessions on DB (1,487 + 680 being uploaded) | successors 23838–23842 (23896 held) |
 | 2026-10-28 21:10 | hokusai wang (haruka74), mpc, whole-node pipeline (same script; container copied from ziqing, sha256 ccef8d7c… checked) | `hokusai_wang_node.env` | 300 (BMB_UHI_PT, uploaded from wu; start automatically once each upload completes) | 12 node chains, first jobs 9706857–9706868; status: `hcp_node_pipeline.sh status config/hokusai_wang_node.env` |
 
 ### HOKUSAI results and problem sessions (2026-10-29 12:50 JST)
@@ -74,6 +76,12 @@ The NIfTI headers of the inputs actually used by all 1,006 started sessions (672
   - Run counts follow each site's protocol: UHI PT 4, UHI/UKY/UNG/UTI TS 6, UOS 2 or 6, JTD/ATR 2.
 
 No other session has these problems: on HOKUSAI every other session has a T2w with 224 slices (`UHI_Skyraf_HARP_6220_001_MR1` has 223 slices at isotropic resolution, was accepted, and is running), there is no other truncated DICOM, and no other Talairach warning; on DB there is no other `PROBLEM`, truncated DICOM or Talairach failure.
+
+### digital brain: stage 1 extended, stage 2 on H100, missing uploads (2026-10-29 18:05 JST)
+
+- **Stage 1** (structural + PreEddy, rolling worker `stage1_worker.sh`): the first 672 sessions (BMB_ATRG3-1_PT, BMB_JTD_PT) are at 614 complete, 55 running, 2 failed, 1 blocked; all were claimed by 13:26 and should finish around 20:00–21:00. `db_stage1.env` now scans every folder that holds DB-assigned sessions (18 folders in `amedhcp1028` and `amedhcp/raw`) and excludes the 1,083 accepted sessions and the 595 HOKUSAI sessions (`lists/stage1_exclude_20261029.txt`). The running workers were told to stop claiming (STOP file, removed again at 17:53); as each finishes its sessions, its successor starts with the new scope. **5 chains** continue (23838–23842); successor 23896 is held so the 6th node is left for the GPU job.
+- **Stage 2** (GPU eddy + PostEddy, new rolling worker `slurm/stage2_gpu_worker.sh`, `config/db_stage2.env`): one job, 4× H100 on gnode03 (gcalc2), 32 CPU, 250 GB, 3 eddy per GPU, 4 PostEddy at a time; it takes every session with `.stage1_complete` and writes `.stage2_complete` / `.stage2_failed`. Job **24205** (`hcp_stage2`) is queued: all 6 H100 on gnode03 are in use by another user until about 2026-10-30 13:00–17:30. gnode01 (8× L40S) is idle.
+- **Uploads**: of the 2,167 DB-assigned sessions, 1,487 are on DB with sizes matching wu; the 680 missing ones (BMB_UHI_PT 632, BMB_KyotoU2_PT 48, 779 GiB) are being pushed from wu to `/data/juntendodb/amedhcp/raw` since 17:47 (`push_state_db`); stage 1 picks each one up 30 min after it arrives and passes `unzip -t`.
 
 ## What the checkmarks mean
 
