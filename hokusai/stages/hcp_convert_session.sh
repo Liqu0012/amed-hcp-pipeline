@@ -10,10 +10,6 @@ set -Eeuo pipefail
 session="${1:?Usage: hcp_convert_session.sh SESSION ARCHIVE_OR_ARCHIVE_LIST}"
 archive="${2:?Usage: hcp_convert_session.sh SESSION ARCHIVE_OR_ARCHIVE_LIST}"
 [[ "$session" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Unsafe session: $session" >&2; exit 2; }
-IFS=@ read -r -a archives <<< "$archive"
-((${#archives[@]} > 0)) || { echo "No archives supplied" >&2; exit 1; }
-for archive_path in "${archives[@]}"; do [[ -s "$archive_path" ]] || { echo "Missing archive: $archive_path" >&2; exit 1; }; done
-
 image="${HCP_IMAGE:?HCP_IMAGE is required}"
 study="${HCP_STUDY:?HCP_STUDY is required}"
 runtime="${HCP_CONTAINER_RUNTIME:-apptainer}"
@@ -31,6 +27,11 @@ if [[ -s "$marker" ]]; then
   echo "Already converted: $session"
   exit 0
 fi
+# The zip is needed only to convert: later stages call this script again on
+# converted sessions whose zip may have been removed.
+IFS=@ read -r -a archives <<< "$archive"
+((${#archives[@]} > 0)) || { echo "No archives supplied" >&2; exit 1; }
+for archive_path in "${archives[@]}"; do [[ -s "$archive_path" ]] || { echo "Missing archive: $archive_path" >&2; exit 1; }; done
 
 scratch="${SLURM_SCRATCH:-${TMPDIR:-/tmp}}/convert-${session}-$$"
 dicom="$scratch/dicom"

@@ -59,25 +59,41 @@ fi
 end_epoch="${HCP_STAGE2_END_EPOCH:-$(date -d "$(squeue -h -j "$SLURM_JOB_ID" -o %e)" +%s 2>/dev/null || echo $(( $(date +%s) + 259200 )))}"
 log "start gpus=${GPUS[*]} eddy_per_gpu=$PER_GPU posteddy_slots=$POST_SLOTS end=$(date -d @"$end_epoch" -Is)"
 
-alive() { [[ -n "$1" ]] && [[ -n "$(squeue -h -j "$1" -o %i 2>/dev/null)" ]]; }
+# A job counts as dead only when Slurm says so. If squeue itself fails (controller
+# busy or restarting), the job is taken as alive, so its sessions are not taken over.
+alive() {
+  local out rc
+  [[ -n "$1" ]] || return 1
+  out=$(squeue -h -j "$1" -o %T 2>&1); rc=$?
+  if (( rc == 0 )); then
+    [[ -n "$out" && ! "$out" =~ ^(COMPLETED|CANCELLED|FAILED|TIMEOUT|NODE_FAIL|OUT_OF_MEMORY|PREEMPTED|BOOT_FAIL|DEADLINE) ]]
+    return
+  fi
+  [[ "$out" == *"Invalid job id"* ]] && return 1
+  return 0
+}
 finished() { [[ -e "$HCP_STUDY/$1/.stage2_complete" || -e "$HCP_STUDY/$1/.stage2_failed" ]]; }
 claim() {
   local s="$1" c="$Q/claims/$1" owner
   if mkdir "$c" 2>/dev/null; then echo "$SLURM_JOB_ID" > "$c/job"; return 0; fi
   owner=$(cat "$c/job" 2>/dev/null || true)
   [[ "$owner" == "$SLURM_JOB_ID" ]] && return 0
-  if [[ -n "$owner" ]] && ! alive "$owner"; then
-    if mv "$c" "$Q/claims/.stale.$s.$SLURM_JOB_ID.$$" 2>/dev/null; then
-      rm -rf "$Q/claims/.stale.$s.$SLURM_JOB_ID.$$"
-      mkdir "$c" 2>/dev/null && { echo "$SLURM_JOB_ID" > "$c/job"; return 0; }
-    fi
-  fi
-  return 1
+  [[ -n "$owner" ]] && ! alive "$owner" || return 1
+  # Take over a dead job's claim under one lock, and only if the claim still names
+  # that job: two workers that both saw the dead owner cannot both win.
+  (
+    flock -w 120 9 || exit 1
+    [[ "$(cat "$c/job" 2>/dev/null)" == "$owner" ]] || exit 1
+    echo "$SLURM_JOB_ID" > "$c/job.$SLURM_JOB_ID" && mv -f -- "$c/job.$SLURM_JOB_ID" "$c/job"
+  ) 9>"$Q/claims/.takeover.lock" || return 1
+  # Result files of the dead job's stages: those stages run again.
+  rm -f -- "$c"/*.rc "$c"/*.rc.* 2>/dev/null
+  return 0
 }
 
 # One stage of one session in the background; rc written to a file.
 launch() {
-  local s=$1 st=$2 t=$3 gpu=${4:-} rcf="$Q/claims/$1/$2.rc"
+  local s=$1 st=$2 t=$3 gpu=${4:-} rcf="$Q/claims/$1/$2.rc.$SLURM_JOB_ID"
   rm -f -- "$rcf"
   (
     export OMP_NUM_THREADS="$t" MKL_NUM_THREADS="$t" OPENBLAS_NUM_THREADS="$t"
@@ -109,7 +125,7 @@ end_session() {   # $1 session, $2 marker file, $3 content
 reap() {
   local pid s st rc rcf
   for pid in "${!RUN_S[@]}"; do
-    s=${RUN_S[$pid]}; st=${RUN_ST[$pid]}; rcf="$Q/claims/$s/$st.rc"
+    s=${RUN_S[$pid]}; st=${RUN_ST[$pid]}; rcf="$Q/claims/$s/$st.rc.$SLURM_JOB_ID"
     [[ -s "$rcf" ]] || continue
     wait "$pid" 2>/dev/null; rc=$(cat "$rcf")
     [[ -n "${RUN_G[$pid]}" ]] && GLOAD[${RUN_G[$pid]}]=$(( GLOAD[${RUN_G[$pid]}] - 1 ))
@@ -137,6 +153,8 @@ claim_next() {
     finished "$s" && continue
     [[ -d "$Q/claims/$s" ]] && alive "$(cat "$Q/claims/$s/job" 2>/dev/null)" && continue
     claim "$s" || continue
+    # Another worker may have finished the session between the check above and the claim.
+    finished "$s" && { rm -rf -- "$Q/claims/$s"; continue; }
     # Sessions without usable dMRI: run-stage.sh skips eddy/PostEddy with success.
     INF[$s]=1
     if [[ -s "$d/.hcp_diffusion_eddy_complete.ok" ]]; then PHASE[$s]=posteddy; else PHASE[$s]=eddy; fi

@@ -56,7 +56,19 @@ fi
 end_epoch=$(date -d "$(squeue -h -j "$SLURM_JOB_ID" -o %e)" +%s 2>/dev/null || echo $(( $(date +%s) + 259200 )))
 log "start slots=$SLOTS threads=$THREADS end=$(date -d @"$end_epoch" -Is) sources=$HCP_SOURCE_DIRS"
 
-alive() { [[ -n "$1" ]] && [[ -n "$(squeue -h -j "$1" -o %i 2>/dev/null)" ]]; }
+# A job counts as dead only when Slurm says so. If squeue itself fails (controller
+# busy or restarting), the job is taken as alive, so its sessions are not taken over.
+alive() {
+  local out rc
+  [[ -n "$1" ]] || return 1
+  out=$(squeue -h -j "$1" -o %T 2>&1); rc=$?
+  if (( rc == 0 )); then
+    [[ -n "$out" && ! "$out" =~ ^(COMPLETED|CANCELLED|FAILED|TIMEOUT|NODE_FAIL|OUT_OF_MEMORY|PREEMPTED|BOOT_FAIL|DEADLINE) ]]
+    return
+  fi
+  [[ "$out" == *"Invalid job id"* ]] && return 1
+  return 0
+}
 
 finished() {
   local d="$HCP_STUDY/$1"
@@ -79,14 +91,15 @@ claim() {
     echo "$SLURM_JOB_ID" > "$c/job"; return 0
   fi
   owner=$(cat "$c/job" 2>/dev/null || true)
-  if [[ -n "$owner" ]] && ! alive "$owner"; then
-    # Stale claim from a worker that died: only one worker wins the rename.
-    if mv "$c" "$Q/claims/.stale.$1.$SLURM_JOB_ID.$$" 2>/dev/null; then
-      rm -rf "$Q/claims/.stale.$1.$SLURM_JOB_ID.$$"
-      mkdir "$c" 2>/dev/null && { echo "$SLURM_JOB_ID" > "$c/job"; return 0; }
-    fi
-  fi
-  return 1
+  [[ -n "$owner" ]] && ! alive "$owner" || return 1
+  # Take over a dead job's claim under one lock, and only if the claim still names
+  # that job: two workers that both saw the dead owner cannot both win.
+  (
+    flock -w 120 9 || exit 1
+    [[ "$(cat "$c/job" 2>/dev/null)" == "$owner" ]] || exit 1
+    echo "$SLURM_JOB_ID" > "$c/job.$SLURM_JOB_ID" && mv -f -- "$c/job.$SLURM_JOB_ID" "$c/job"
+  ) 9>"$Q/claims/.takeover.lock" || return 1
+  return 0
 }
 
 process() {
@@ -142,6 +155,8 @@ while :; do
       [[ -n "$(find "$z" -maxdepth 0 -mmin +"$MIN_AGE" 2>/dev/null)" ]] || continue
       # Claim before the (slow) zip test so workers never test the same file.
       claim "$s" || continue
+      # Another worker may have finished the session between the check above and the claim.
+      finished "$s" && { rm -rf -- "$Q/claims/$s"; continue; }
       if ! upload_ready "$z" "$s"; then
         rm -rf -- "$Q/claims/$s"; log "not ready (zip test failed, upload in progress?) $s"; continue
       fi

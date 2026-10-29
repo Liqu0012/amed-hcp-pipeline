@@ -75,26 +75,68 @@ declare -A DISKGB=([convert]=6 [preeddy]=2 [eddy]=3 [structural]=3 [posteddy]=2
 for st in "${!DISKGB[@]}"; do v="HCP_NODE_${st^^}_DISK_GB"; DISKGB[$st]="${!v:-${DISKGB[$st]}}"; done
 # Study directories in /lustre/tmp_work (HCP_NODE_STUDY_TMP): a new session gets
 # its directory there with a symlink in HCP_STUDY. tmp_work deletes files not
-# modified for 7 days, so a session whose oldest file is older than
-# HCP_NODE_TMP_MAX_AGE_DAYS (6) when it is (re)claimed is cleared and computed
-# again from the start instead of continuing with files that may be gone.
+# modified for 7 days. The age of a session's files is taken from
+# state/<session>/convert.done on home (the purge cannot touch it; the inputs and
+# the early outputs are about that old), not from the files themselves, which
+# after a partial purge would all look young. While a session is idle:
+#   - older than HCP_NODE_TMP_REHOME_DAYS (5): it is copied back to HCP_STUDY
+#     (home) if the disk guard allows, and the symlink replaced by the copy;
+#   - older than HCP_NODE_TMP_MAX_AGE_DAYS (6.5) and still in tmp_work: it gets
+#     FAILED (failed_stages=tmp_work_expiry) so nothing continues on files that
+#     may be purged; the pull keeps it on wu, and it is rerun from its zip.
+#   - its tmp_work directory gone: FAILED (failed_stages=tmp_work_lost).
 STUDY_TMP="${HCP_NODE_STUDY_TMP:-}"
-TMP_MAX_AGE_DAYS="${HCP_NODE_TMP_MAX_AGE_DAYS:-6}"
+TMP_REHOME_SEC=$(awk -v d="${HCP_NODE_TMP_REHOME_DAYS:-5}" 'BEGIN{printf "%d", d*86400}')
+TMP_MAX_AGE_SEC=$(awk -v d="${HCP_NODE_TMP_MAX_AGE_DAYS:-6.5}" 'BEGIN{printf "%d", d*86400}')
 place_study() {
   local s=$1
   [[ -n "$STUDY_TMP" && ! -e "$HCP_STUDY/$s" && ! -L "$HCP_STUDY/$s" ]] || return 0
   mkdir -p "$STUDY_TMP/$s" && ln -s "$STUDY_TMP/$s" "$HCP_STUDY/$s" && log "STUDY $s -> $STUDY_TMP/$s"
 }
-guard_tmp_age() {
-  local s=$1 d="$HCP_STUDY/$1" r st
-  [[ -L "$d" ]] || return 0
+in_tmp() {
+  local l
+  [[ -L "$HCP_STUDY/$1" ]] || return 1
+  l=$(readlink -- "$HCP_STUDY/$1")
+  [[ "$l" == /lustre/tmp_work/* || ( -n "$STUDY_TMP" && "$l" == "$STUDY_TMP"/* ) ]]
+}
+tmp_age() {   # seconds since convert finished; 0 if not converted yet
+  local f="$Q/state/$1/convert.done"
+  [[ -e "$f" ]] && echo $(( $(date +%s) - $(stat -c %Y "$f") )) || echo 0
+}
+rehome() {    # copy an idle tmp_work session back to HCP_STUDY and replace the link
+  local s=$1 d="$HCP_STUDY/$1" r need free t0=$SECONDS new="$HCP_STUDY/.$1.rehome"
   r=$(readlink -f -- "$d")
-  [[ "$r" == /lustre/tmp_work/* ]] || return 0
-  if [[ ! -d "$r" ]] || [[ -n "$(find "$r" -type f ! -newermt "$TMP_MAX_AGE_DAYS days ago" -print -quit 2>/dev/null)" ]]; then
-    log "RESET $s: tmp_work files older than $TMP_MAX_AGE_DAYS days (or gone); computing again from the start"
-    rm -rf -- "$r"; mkdir -p "$r"
-    for st in "${STAGES[@]}"; do rm -f -- "$Q/state/$s/$st.done" "$Q/state/$s/$st.failed"; done
+  need=$(du -s -BG "$r" 2>/dev/null | awk '{sub(/G$/,"",$1); print $1+1}')
+  free=$(disk_free_gb || echo 0)
+  if (( free - ${need:-999999} - disk_pending < DISK_MIN_FREE_GB )); then
+    log "REHOME $s postponed: needs ${need} GB, ${free} GB free, reserve ${DISK_MIN_FREE_GB} GB"; return 1
   fi
+  rm -rf -- "$new"
+  if ! rsync -aH "$r/" "$new/" 2>>"$Q/logs/$s.rehome.log"; then
+    rm -rf -- "$new"; log "REHOME $s: copy failed, left in tmp_work"; return 1
+  fi
+  rm -f -- "$d" && mv -T -- "$new" "$d" || { log "REHOME $s: swap failed (check $d and $new)"; return 1; }
+  rm -rf -- "$r"
+  log "REHOME $s: tmp_work -> $d (${need} GB, $((SECONDS - t0)) s)"
+}
+session_busy() { local st; for st in "${STAGES[@]}"; do [[ -n "${RUNNING[$1/$st]:-}" ]] && return 0; done; return 1; }
+# Returns non-zero when the session must not continue (it was marked FAILED).
+guard_tmp() {
+  local s=$1 age
+  in_tmp "$s" || return 0
+  if [[ ! -d "$(readlink -f -- "$HCP_STUDY/$s")" ]]; then
+    session_busy "$s" && return 0
+    printf 'failed_stages=tmp_work_lost\njob=%s\n' "$SLURM_JOB_ID" > "$Q/state/$s/FAILED"
+    log "SESSION FAILED $s: its tmp_work directory is gone"; return 1
+  fi
+  age=$(tmp_age "$s")
+  (( age > TMP_REHOME_SEC )) || return 0
+  session_busy "$s" && return 0
+  rehome "$s" && return 0
+  (( age > TMP_MAX_AGE_SEC )) || return 0
+  printf 'failed_stages=tmp_work_expiry\nage_hours=%s\njob=%s\n' "$((age / 3600))" "$SLURM_JOB_ID" > "$Q/state/$s/FAILED"
+  log "SESSION FAILED $s: still in tmp_work $((age / 3600)) h after convert and could not be copied home"
+  return 1
 }
 disk_free_gb() { [[ -n "${HCP_NODE_TEST_DISK_FREE_GB:-}" ]] && { echo "$HCP_NODE_TEST_DISK_FREE_GB"; return; }; df -P -BG "$HCP_STUDY" 2>/dev/null | awk 'NR==2 {sub(/G$/,"",$4); print $4+0}'; }
 POLL="${HCP_NODE_POLL_SEC:-30}"
@@ -157,7 +199,19 @@ fi
 : "${SLURM_JOB_ID:?worker runs under Slurm}"
 log() { printf '%s [%s %s] %s\n' "$(date -Is)" "$(hostname)" "$SLURM_JOB_ID" "$*"; }
 
-alive() { [[ -n "$1" ]] && [[ -n "$(squeue -h -j "$1" -o %i 2>/dev/null)" ]]; }
+# A job counts as dead only when Slurm says so. If squeue itself fails (controller
+# busy or restarting), the job is taken as alive, so its sessions are not taken over.
+alive() {
+  local out rc
+  [[ -n "$1" ]] || return 1
+  out=$(squeue -h -j "$1" -o %T 2>&1); rc=$?
+  if (( rc == 0 )); then
+    [[ -n "$out" && ! "$out" =~ ^(COMPLETED|CANCELLED|FAILED|TIMEOUT|NODE_FAIL|OUT_OF_MEMORY|PREEMPTED|BOOT_FAIL|DEADLINE) ]]
+    return
+  fi
+  [[ "$out" == *"Invalid job id"* ]] && return 1
+  return 0
+}
 claim_owner_alive() { alive "$(cat "$Q/claims/$1/job" 2>/dev/null)"; }
 unfinished_left() { local s; for s in "${SESSIONS[@]}"; do terminal "$s" || return 0; done; return 1; }
 unclaimed_left() {
@@ -205,16 +259,20 @@ claim() {
   if mkdir "$c" 2>/dev/null; then echo "$SLURM_JOB_ID" > "$c/job"; return 0; fi
   owner=$(cat "$c/job" 2>/dev/null || true)
   [[ "$owner" == "$SLURM_JOB_ID" ]] && return 0
-  if [[ -n "$owner" ]] && ! alive "$owner"; then
-    if mv "$c" "$Q/claims/.stale.$s.$SLURM_JOB_ID.$$" 2>/dev/null; then
-      rm -rf "$Q/claims/.stale.$s.$SLURM_JOB_ID.$$"
-      mkdir "$c" 2>/dev/null && { echo "$SLURM_JOB_ID" > "$c/job"; return 0; }
-    fi
-  fi
-  return 1
+  [[ -n "$owner" ]] && ! alive "$owner" || return 1
+  # Take over a dead job's claim under one lock, and only if the claim still names
+  # that job: two jobs that both saw the dead owner cannot both win.
+  (
+    flock -w 120 9 || exit 1
+    [[ "$(cat "$c/job" 2>/dev/null)" == "$owner" ]] || exit 1
+    echo "$SLURM_JOB_ID" > "$c/job.$SLURM_JOB_ID" && mv -f -- "$c/job.$SLURM_JOB_ID" "$c/job"
+  ) 9>"$Q/claims/.takeover.lock" || return 1
+  # Stages the dead job left running have no .done: they run again.
+  rm -f -- "$Q/state/$s/"*.running "$Q/state/$s/"*.rc.* 2>/dev/null
+  return 0
 }
 
-declare -A INF=() RUN_S=() RUN_ST=() RUN_T=() RUNNING=() RUNC=()
+declare -A INF=() RUN_S=() RUN_ST=() RUN_T=() RUNNING=() RUNC=() TMP_CHECKED=()
 cpu_used=0 mem_used=0 disk_pending=0
 
 claim_next() {
@@ -226,11 +284,14 @@ claim_next() {
     converted=0; [[ -e "$Q/state/$s/convert.done" ]] && converted=1
     (( converted )) || [[ -s "${ARCH[$s]}" && -n "$(find "${ARCH[$s]}" -maxdepth 0 -mmin +"$MIN_AGE" 2>/dev/null)" ]] || continue
     claim "$s" || continue
+    # Another job may have finished the session between the check above and the claim.
+    terminal "$s" && { rm -rf -- "$Q/claims/$s"; continue; }
     if (( !converted )) && ! upload_ready "${ARCH[$s]}" "$s"; then
       rm -rf -- "$Q/claims/$s"; log "not ready (zip test failed) $s"; continue
     fi
     mkdir -p "$Q/state/$s"; INF[$s]=1; log "CLAIM $s (${#INF[@]} in progress)"
-    guard_tmp_age "$s"; place_study "$s"
+    guard_tmp "$s" || { rm -rf -- "$Q/claims/$s"; unset "INF[$s]"; continue; }
+    TMP_CHECKED[$s]=$(date +%s); place_study "$s"
     return 0
   done
   return 1
@@ -312,7 +373,9 @@ finalize() {
     else
       failed=$(cd "$d" && ls -- *.failed 2>/dev/null | sed 's/\.failed$//' | paste -sd, -)
       if [[ -z "$failed" && -e "$d/qc.done" ]]; then
-        printf 'completed=%s\njob=%s\n' "$(date -Is)" "$SLURM_JOB_ID" > "$d/DONE"; log "SESSION DONE $s"
+        # File count of the finished session: the pull to wu checks its copy against it.
+        printf 'completed=%s\njob=%s\nfiles=%s\n' "$(date -Is)" "$SLURM_JOB_ID" \
+          "$(find "$HCP_STUDY/$s/" -type f 2>/dev/null | wc -l)" > "$d/DONE"; log "SESSION DONE $s"
       else
         printf 'failed_stages=%s\njob=%s\n' "${failed:-unknown}" "$SLURM_JOB_ID" > "$d/FAILED"; log "SESSION FAILED $s ($failed)"
       fi
@@ -328,15 +391,25 @@ for s in "${SESSIONS[@]}"; do
   owner=$(cat "$Q/claims/$s/job" 2>/dev/null || true)
   [[ -n "$owner" ]] && alive "$owner" && continue
   (( ${#INF[@]} < MAX_SESSIONS )) || break
-  # Stages left running by a killed job have no .done: they run again.
-  rm -f -- "$Q/state/$s/"*.running "$Q/state/$s/"*.rc.* 2>/dev/null
-  claim "$s" && { mkdir -p "$Q/state/$s"; INF[$s]=1; log "RESUME $s"; guard_tmp_age "$s"; place_study "$s"; }
+  # claim() clears the stages the killed job left marked as running.
+  claim "$s" || continue
+  terminal "$s" && { rm -rf -- "$Q/claims/$s"; continue; }
+  mkdir -p "$Q/state/$s"; INF[$s]=1; log "RESUME $s"
+  guard_tmp "$s" || { rm -rf -- "$Q/claims/$s"; unset "INF[$s]"; continue; }
+  TMP_CHECKED[$s]=$(date +%s); place_study "$s"
 done
 
 while :; do
   reap
   finalize
   now=$(date +%s)
+  # tmp_work age of the sessions held here, at most every 10 min per session
+  # (guard_tmp may copy a session home, which takes minutes).
+  for s in "${!INF[@]}"; do
+    (( now - ${TMP_CHECKED[$s]:-0} >= 600 )) || continue
+    TMP_CHECKED[$s]=$now
+    guard_tmp "$s" || { rm -rf -- "$Q/claims/$s"; unset "INF[$s]" "TMP_CHECKED[$s]"; }
+  done
   launched=0 time_blocked=0 disk_blocked=0
   disk_left=$(( $(disk_free_gb || echo 0) - DISK_MIN_FREE_GB - disk_pending ))
   avail_mb=$(awk '/^MemAvailable:/ {a=$2} /^MemFree:/ {f=$2} END {print int((a ? a : f)/1024)}' /proc/meminfo)
