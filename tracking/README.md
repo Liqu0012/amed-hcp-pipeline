@@ -58,8 +58,20 @@ Checked: the convert and structural logs of every session started so far, 181 on
 | `UHI_Skyraf_HARP_6210_001_MR1` | hokusai wang | 阻塞 (convert) | T2_SPC_13 is 0.8×0.8×1.6 mm (212 slices). The input selector requires near-isotropic voxels (longest edge ≤ 1.5 × shortest), so it reports "no usable T2w" | Decide whether this T2w may be used (selector rule change; preprocessing-parameter issue) |
 | `UHI_Skyraf_HARP_6127_001_MR1` | hokusai wang | 失败 (convert, rc=8) | One truncated DICOM in series 11 = BOLD_REST1_PA (375 volumes): `File not large enough to store image data`, 1720 of 2095 files converted. The zip matches wu byte for byte, so the source itself is damaged. T1w/T2w are fine | Run without the REST1_PA run, or exclude the session |
 | `JTD_Prisma_HARP_1220_001_MR1` | digital brain | 失败 (convert, rc=8) | One truncated DICOM in series 24 (after BOLD_REST1_AP_23, the SBRef, so probably the REST1_AP run), 640 of 642 files converted. Its T1_MPR/T2_SPC are 320×320×146, unlike other JTD sessions | Confirm the damaged series, then drop that run or exclude the session |
-| `UHI_Skyraf_HARP_6151_001_MR1` | hokusai wang | 失败 (structural) | FreeSurfer Talairach failure detection: `talairach_afd` p=0.0049 < 0.005 | Check T1w quality; if it looks normal, rerun with `-notal-check`, otherwise mark QC-failed |
-| `JTD_Prisma_HARP_1125_002_MR1` | digital brain | 失败 (structural) | recon-all stopped after the parallel curvature step with `Cannot find rh.white.H`. This is a FreeSurfer 6 parallel-step file problem, not a data problem | Rerun once |
+| `UHI_Skyraf_HARP_6151_001_MR1` | hokusai wang | 失败 (structural) | FreeSurfer Talairach registration really failed: `talairach.xfm` scales about 1.77 with about 30° rotation (normal sessions about 1.02–1.14, almost no rotation), so `talairach_afd` p=0.0049 < 0.005 is not a borderline case. The upstream AC-PC alignment is normal | Do not just skip the check with `-notal-check`: inspect the T1w first (head position, FOV, artefacts), then fix the Talairach transform by hand or mark the session QC-failed |
+| `JTD_Prisma_HARP_1125_002_MR1` | digital brain | 失败 (structural) | Caused by our recon-all `-parallel` option: inside a parallel batch, `rm -f rh.white.H` ran after `ln -s rh.white.preaparc.H rh.white.H` and removed the link (`Cannot find rh.white.H`), a FreeSurfer 6 race. It can only stop a session; it cannot give a wrong result | Rerun once |
+
+### Does this affect other sessions? (checked 2026-10-29 16:20 JST)
+
+The NIfTI headers of the inputs actually used by all 1,006 started sessions (672 DB, 181 hokusai chang, 153 hokusai wang) were read:
+
+- Every selected T1w and T2w is 0.8 mm isotropic (224×300×320, apart from small field-of-view differences), every rfMRI run is 2.4 mm, 86×86×60. No session uses a wrong or low-resolution image. `UHI_Skyraf_HARP_6220_001_MR1` stores its T2w as 300×320×223 (a different slice direction), still 0.8 mm isotropic; check its T2w-to-T1w registration once structural finishes.
+- Truncated DICOMs, missing T1w/T2w and the Talairach failure are specific to those sessions' data and do not change other sessions' results.
+- The `-parallel` race in `JTD_Prisma_HARP_1125_002_MR1` can make any session stop at random (1 of about 1,000 so far), but cannot give a wrong result silently; a rerun fixes it.
+- By the input-selection rules, some sessions are processed with less data than the full protocol. This is deliberate, logged per session, and has to be considered when comparing sessions:
+  - 21 DB JTD sessions have no usable rfMRI (aborted runs under 100 volumes, or no AP/PA spin-echo pair); without a spin-echo pair, PreFreeSurfer runs without readout distortion correction (`WARNING no spin-echo pair` in the session log).
+  - Runs between 100 and 374 volumes are used as they are. On DB, 6 JTD sessions have one short run (148–320 volumes); in `JTD_Prisma_HARP_1082_001_MR1` an interrupted REST1_AP (217 volumes) is kept as `rfMRI_REST1_AP` and the repeat (375) as `rfMRI_REST2_AP`. On hokusai chang, one UNG session has a 251-volume run.
+  - Run counts follow each site's protocol: UHI PT 4, UHI/UKY/UNG/UTI TS 6, UOS 2 or 6, JTD/ATR 2.
 
 No other session has these problems: on HOKUSAI every other session has a T2w with 224 slices (`UHI_Skyraf_HARP_6220_001_MR1` has 223 slices at isotropic resolution, was accepted, and is running), there is no other truncated DICOM, and no other Talairach warning; on DB there is no other `PROBLEM`, truncated DICOM or Talairach failure.
 
