@@ -2132,7 +2132,7 @@ Plan: 2026-10-28 20:10 JST. DB status snapshot: 2026-10-28T19:05:19+09:00 (JST).
 | UHI_Skyraf_HARP_5334_003_MR1 | hokusai wang | 已计划 | ☐ | ☐ | ☐ | ☐ |
 | UHI_Skyraf_HARP_5335_001_MR1 | hokusai wang | 已计划 | ☐ | ☐ | ☐ | ☐ |
 | UHI_Skyraf_HARP_5337_001_MR1 | hokusai wang | 已计划 | ☐ | ☐ | ☐ | ☐ |
-| UHI_Skyraf_HARP_5337_002_MR1 | hokusai wang | 已计划 | ☐ | ☐ | ☐ | ☐ |
+| UHI_Skyraf_HARP_5337_002_MR1 | hokusai wang | 失败 | ☐ | ☐ | ☐ | ☐ |
 | UHI_Skyraf_HARP_5338_001_MR1 | hokusai wang | 已计划 | ☐ | ☐ | ☐ | ☐ |
 | UHI_Skyraf_HARP_5338_002_MR1 | hokusai wang | 已计划 | ☐ | ☐ | ☐ | ☐ |
 | UHI_Skyraf_HARP_5339_001_MR1 | hokusai wang | 已计划 | ☐ | ☐ | ☐ | ☐ |
