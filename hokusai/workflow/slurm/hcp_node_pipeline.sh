@@ -316,7 +316,7 @@ launch() {
     mkdir -p "$scratch"
     echo "=== $(date -Is) $s stage $st on $(hostname) job $SLURM_JOB_ID threads $t"
     # A FreeSurfer tree left by a killed job is moved aside so recon-all starts clean.
-    if [[ "$st" == structural && -d "$HCP_STUDY/$s/T1w/$s" && ! -s "$HCP_STUDY/$s/.hcp_freesurfer_stage.ok" ]]; then
+    if [[ "$st" == structural && -d "$HCP_STUDY/$s/T1w/$s" && ! -e "$HCP_STUDY/$s/.hcp_freesurfer_stage.ok" ]]; then
       mv "$HCP_STUDY/$s/T1w/$s" "$HCP_STUDY/$s/T1w/$s.interrupted-$(date +%Y%m%dT%H%M%S)"
     fi
     rc=0

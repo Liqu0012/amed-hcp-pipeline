@@ -113,7 +113,7 @@ process() {
     echo "=== $(date -Is) $s on $(hostname) job $SLURM_JOB_ID archive $z"
     # A FreeSurfer tree left by a killed job (no marker, no recon-all.error) is
     # moved aside so recon-all starts clean; nothing is deleted.
-    if [[ -d "$d/T1w/$s" && ! -s "$d/.hcp_freesurfer_stage.ok" ]]; then
+    if [[ -d "$d/T1w/$s" && ! -e "$d/.hcp_freesurfer_stage.ok" ]]; then
       mv "$d/T1w/$s" "$d/T1w/$s.interrupted-$(date +%Y%m%dT%H%M%S)"
     fi
     for stage in structural preeddy; do

@@ -63,7 +63,7 @@ fi
   t2w_image="'"$t2w_image"'"
   processing_mode="'"$processing_mode"'"
 
-  if [[ ! -s "$study/$session/.hcp_freesurfer_stage.ok" ]]; then
+  if [[ ! -e "$study/$session/.hcp_freesurfer_stage.ok" ]]; then
     echo "=== FreeSurfer stage started: $(date) ==="
     "$HCPPIPEDIR/FreeSurfer/FreeSurferPipeline.sh" \
       --session="$session" \
@@ -75,7 +75,7 @@ fi
       --extra-reconall-arg=-parallel \
       --extra-reconall-arg=-openmp \
       --extra-reconall-arg="$threads"
-    touch "$study/$session/.hcp_freesurfer_stage.ok"
+    date -Is > "$study/$session/.hcp_freesurfer_stage.ok"
     echo "=== FreeSurfer stage completed: $(date) ==="
   fi
 
