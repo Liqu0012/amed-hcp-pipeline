@@ -563,7 +563,7 @@ Plan: 2026-10-28 20:10 JST. DB status snapshot: 2026-10-28T19:05:19+09:00 (JST).
 | JTD_Prisma_HARP_1783_001_MR1 | digital brain | 已完成 | ☐ | ☐ | ☐ | ☑ |
 | JTD_Prisma_HARP_1785_001_MR1 | digital brain | 已完成 | ☐ | ☐ | ☐ | ☑ |
 | JTD_Prisma_HARP_1787_001_MR1 | digital brain | 已完成 | ☐ | ☐ | ☐ | ☑ |
-| JTD_Prisma_HARP_1788_001_MR1 | digital brain | 运行中 | ☐ | ☐ | ☐ | ☑ |
+| JTD_Prisma_HARP_1788_001_MR1 | digital brain | 失败 | ☐ | ☐ | ☐ | ☑ |
 | JTD_Prisma_HARP_1789_001_MR1 | digital brain | 已完成 | ☐ | ☐ | ☐ | ☑ |
 | JTD_Prisma_HARP_1791_001_MR1 | digital brain | 已完成 | ☐ | ☐ | ☐ | ☑ |
 | JTD_Prisma_HARP_1792_001_MR1 | digital brain | 已完成 | ☐ | ☐ | ☐ | ☑ |
@@ -665,10 +665,10 @@ Plan: 2026-10-28 20:10 JST. DB status snapshot: 2026-10-28T19:05:19+09:00 (JST).
 | JTD_Prisma_HARP_2008_001_MR1 | digital brain | 已完成 | ☐ | ☐ | ☐ | ☑ |
 | JTD_Prisma_HARP_2010_001_MR1 | digital brain | 运行中 | ☐ | ☐ | ☐ | ☑ |
 | JTD_Prisma_HARP_2011_001_MR1 | digital brain | 运行中 | ☐ | ☐ | ☐ | ☑ |
-| JTD_Prisma_HARP_2016_001_MR1 | digital brain | 运行中 | ☐ | ☐ | ☐ | ☑ |
+| JTD_Prisma_HARP_2016_001_MR1 | digital brain | 失败 | ☐ | ☐ | ☐ | ☑ |
 | JTD_Prisma_HARP_2017_001_MR1 | digital brain | 运行中 | ☐ | ☐ | ☐ | ☑ |
 | JTD_Prisma_HARP_2018_001_MR1 | digital brain | 运行中 | ☐ | ☐ | ☐ | ☑ |
-| JTD_Prisma_HARP_2023_001_MR1 | digital brain | 运行中 | ☐ | ☐ | ☐ | ☑ |
+| JTD_Prisma_HARP_2023_001_MR1 | digital brain | 失败 | ☐ | ☐ | ☐ | ☑ |
 | JTD_Prisma_HARP_2024_001_MR1 | digital brain | 已完成 | ☐ | ☐ | ☐ | ☑ |
 | JTD_Prisma_HARP_2025_001_MR1 | digital brain | 运行中 | ☐ | ☐ | ☐ | ☑ |
 | JTD_Prisma_HARP_2026_001_MR1 | digital brain | 运行中 | ☐ | ☐ | ☐ | ☑ |
