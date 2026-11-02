@@ -11,5 +11,6 @@ command=$3
 exec "${L4N_RUNTIME:-apptainer}" exec --cleanenv --no-home "${args[@]}" "$image" bash --noprofile --norc -c '
  export HOME=/home/brain
  source /home/brain/.bash_aliases
- eval "$1"
-' bash "$command"
+ export OMP_NUM_THREADS="$1" OPENBLAS_NUM_THREADS=1
+ eval "$2"
+' bash "${HCP_CPUS_PER_SESSION:-${SLURM_CPUS_PER_TASK:-4}}" "$command"

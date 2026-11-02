@@ -29,9 +29,11 @@ case "$stage" in
     else
       export HCP_STUDY=$L4N_INPUTS
       # The converter uses this small runtime shim for new-image environment setup.
+      original_runtime=$HCP_CONTAINER_RUNTIME
       export HCP_CONTAINER_RUNTIME="$root/bin/converter-runtime.sh"
       export L4N_RUNTIME=${L4N_RUNTIME:-apptainer}
       bash "$root/../hokusai/stages/hcp_convert_session.sh" "$session" "$archive"
+      export HCP_CONTAINER_RUNTIME=$original_runtime
       export HCP_STUDY=$S
     fi
   fi
