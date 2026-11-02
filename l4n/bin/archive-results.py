@@ -35,7 +35,7 @@ def remote_scan(host, base):
 
 def sync(host, source, target, follow=False, verify=False, excludes=()):
     args = ['rsync', '-a' + ('L' if follow else '') + ('nc' if verify else ''), '--partial',
-            '-e', ' '.join(SSH)]
+            '--no-owner', '--no-group', '-e', ' '.join(SSH)]
     args += ['--exclude=' + item for item in excludes]
     if verify:
         args += ['--out-format=%i %n']
