@@ -23,4 +23,12 @@ if '# L4N_BMB_MEASUREMENT_ROOTS' not in s:
     s += '\n# L4N_BMB_MEASUREMENT_ROOTS\n'
     compile(s, str(p), 'exec')
     temporary = p.with_suffix('.l4n.tmp'); temporary.write_text(s); temporary.replace(p)
+if '# L4N_JOB_SCOPED_ROOTS' not in s:
+    old = "     stage,sid=cmd[i+2:i+4]"
+    if old not in s:
+        raise SystemExit('Unrecognized sampler root assignment; cannot scope job')
+    new = "     current_job=os.environ.get('SLURM_JOB_ID')\n     if current_job and ('SLURM_JOB_ID='+current_job).encode() not in (path/'environ').read_bytes().split(b'\\0'):continue\n" + old
+    s = s.replace(old, new) + '\n# L4N_JOB_SCOPED_ROOTS\n'
+    compile(s, str(p), 'exec')
+    temporary = p.with_suffix('.l4n.tmp'); temporary.write_text(s); temporary.replace(p)
 print(p)
