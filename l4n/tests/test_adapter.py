@@ -3,12 +3,28 @@ import json
 import pathlib
 import tempfile
 import unittest
+import csv
 
 spec = importlib.util.spec_from_file_location('adapter', pathlib.Path(__file__).parents[1] / 'bin/legacy_to_bids.py')
 module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
 
 
 class AdapterTests(unittest.TestCase):
+    def test_rebased_csv_retains_scientific_fields_and_quoted_commas(self):
+        spec = importlib.util.spec_from_file_location('rebase', pathlib.Path(__file__).parents[1] / 'bin/rebase-seriesinfo.py')
+        rebase = importlib.util.module_from_spec(spec); spec.loader.exec_module(rebase)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp); raw = root / 'study/session/RawData'; raw.mkdir(parents=True)
+            (raw / 'T1.nii.gz').write_bytes(b'fixture')
+            mapping = root / 'hcp_mapping'
+            old = str(mapping / 'generated/RawData/T1.nii.gz')
+            with (raw / 'Seriesinfo.csv').open('w', newline='') as stream:
+                csv.writer(stream).writerows([['Description', 'DwelltimeRead', 'NIFTI in RawData'], ['T1, normalized', '0.0000071', old]])
+            rebase.rebase(raw, mapping)
+            with (raw / 'Seriesinfo.csv').open(newline='') as stream:
+                rows = list(csv.reader(stream))
+            self.assertEqual(['T1, normalized', '0.0000071', str(raw / 'T1.nii.gz')], rows[1])
+
     def fixture(self, root):
         source = root / 'legacy'; (source / 'selection').mkdir(parents=True)
         (source / 'selection/input_selection.json').write_text(json.dumps({'t1_dwell': 7.1e-6, 't2_dwell': 2.1e-6}))

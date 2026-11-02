@@ -15,7 +15,10 @@ has_fmri() { [[ -s "$conf" ]] && (source "$conf"; [[ -n ${Tasklist:-} ]]); }
 has_diffusion() { [[ -s "$conf" ]] && (source "$conf"; [[ -n ${DiffPosData:-} && -n ${DiffNegData:-} ]]); }
 case "$stage" in
  convert)
-  [[ -s "$conf" ]] && exit 0
+  if [[ -s "$conf" ]]; then
+    python3 "$root/bin/rebase-seriesinfo.py" "$D/RawData" "$L4N_INPUTS/$session/hcp_mapping"
+    exit 0
+  fi
   input=$L4N_INPUTS/$session/unprocessed/3T
   # Copy preserved inputs into the new namespace: old result collectors may remove
   # old sessions after draining. Never leave new RawData linked to an old tree.
@@ -40,6 +43,7 @@ case "$stage" in
     l4n_exec bids2hcp.sh -s "$sub" -e "$ses" -b "$bids" -o "$temp" -l
   fi
   mv "$temp/$generated/RawData" "$D/RawData"
+  python3 "$root/bin/rebase-seriesinfo.py" "$D/RawData" "$temp"
   cp "$bids/identity_mapping.json" "$D/input_provenance.json"
   mark convert
   ;;
