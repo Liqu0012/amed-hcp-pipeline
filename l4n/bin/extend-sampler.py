@@ -18,8 +18,16 @@ if '# L4N_BMB_MEASUREMENT_ROOTS' not in s:
     # Completed command-level PSS only. Group PSS already has its own complete-
     # process check in the existing exporter.
     s = s.replace("pss_bytes=0,cpu_ticks=0))", "pss_bytes=0,pss_missing_processes=0,cpu_ticks=0))")
-    s = s.replace("command['processes']+=1;", "command['pss_missing_processes']+=int(item['pss'] is None)\n   command['processes']+=1;")
-    s = s.replace("   g.update(schema_version=2", "   for command in g['commands'].values():\n    if command.get('pss_missing_processes',0):command['pss_bytes']=None\n   g.update(schema_version=2")
+    lines = []
+    for line in s.splitlines():
+        indent = line[:len(line) - len(line.lstrip())]
+        if "command['processes']+=1;" in line:
+            lines.append(indent + "command['pss_missing_processes']+=int(item['pss'] is None)")
+        if 'g.update(schema_version=2' in line:
+            lines.append(indent + "for command in g['commands'].values():")
+            lines.append(indent + " if command.get('pss_missing_processes',0):command['pss_bytes']=None")
+        lines.append(line)
+    s = '\n'.join(lines) + '\n'
     s += '\n# L4N_BMB_MEASUREMENT_ROOTS\n'
     compile(s, str(p), 'exec')
     temporary = p.with_suffix('.l4n.tmp'); temporary.write_text(s); temporary.replace(p)
